@@ -85,6 +85,13 @@ st.markdown("""
         border-radius: 8px !important;
         font-size: 1.1rem !important;
     }
+    
+    /* Center the file uploader text/label */
+    div[data-testid="stFileUploader"] label {
+        text-align: center !important;
+        display: block !important;
+        width: 100% !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
