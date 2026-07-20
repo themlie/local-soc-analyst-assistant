@@ -115,7 +115,12 @@ with col_upload:
     uploaded = st.file_uploader("JSON Log Dosyası Yükle (Veya varsayılan test verisi için boş bırakın)", type=["json"])
 
 with col_model:
-    model = st.text_input("Yapay Zeka Modeli", value=CHAT_MODEL, help="Kullanılacak Foundry Local modeli")
+    model = st.selectbox(
+        "Yapay Zeka Modeli",
+        options=["qwen2.5-1.5b", "phi-4-mini", "llama-3-8b"],
+        index=0,
+        help="Kullanılacak yerel Foundry Local modelini seçin (İlk çalıştırmada otomatik indirilir)"
+    )
 
 def load_logs() -> list[dict]:
     if uploaded is not None:
