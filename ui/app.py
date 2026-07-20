@@ -158,8 +158,13 @@ if run_btn:
                         report = analyze_incident(incident, alias=model)
                         validation = validate_report(report, incident)
                 except Exception as e:
-                    st.error(f"Yapay zeka analizi iptal edildi veya başarısız oldu: {str(e)}")
-                    st.info("İpucu: İşlem sırasında sayfayı yenilemiş veya farklı bir butona tıklamış olabilirsiniz. Lütfen 'Analizi Başlat' butonuna sadece bir kez tıklayıp bekleyin.")
+                    if "cancelled" in str(e).lower():
+                        st.error("⚠️ HATA: Sistem Belleği (RAM) Yetersiz veya İşlem İptal Edildi!")
+                        st.warning("Seçtiğiniz yapay zeka modeli (örn. phi-4-mini) bilgisayarınızın donanım kapasitesini (RAM/İşlemci) aştığı için sistem çökmemek adına işlemi otomatik olarak durdurdu.")
+                        st.info("💡 Çözüm: Lütfen yukarıdaki menüden daha hafif ve hızlı olan 'qwen2.5-1.5b' modelini seçerek analizi tekrar başlatın.")
+                    else:
+                        st.error(f"Yapay zeka analizi başarısız oldu: {str(e)}")
+                        st.info("İpucu: Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.")
                     continue
                 
                 # Render Incident Card
