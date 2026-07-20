@@ -35,10 +35,14 @@ st.markdown("""
         font-weight: 800 !important;
     }
     
-    /* Make the top padding smaller */
+    /* Make the top padding smaller and add horizontal breathing room */
     .block-container {
         padding-top: 2rem;
         padding-bottom: 2rem;
+        padding-left: 5rem !important;
+        padding-right: 5rem !important;
+        max-width: 1400px !important;
+        margin: 0 auto;
     }
     
     /* Premium Button Styling */
