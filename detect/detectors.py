@@ -28,6 +28,7 @@ from ipaddress import ip_address
 from common.db import get_connection
 from config import BRUTE_FORCE_THRESHOLD, BRUTE_FORCE_WINDOW, KERBEROS_FAILURE_THRESHOLD
 from collections import defaultdict
+from detect.registry import register_detector
 
 
 def _parse_time(t: str) -> datetime:
@@ -68,6 +69,7 @@ def _process_rows(conn):
 # --------------------------------------------------------------------------- #
 # Detector 1: Brute Force (T1110)
 # --------------------------------------------------------------------------- #
+@register_detector
 def detect_brute_force(conn) -> list[dict]:
     """Many 4625 failures from the same host+user+IP in a short window = brute force."""
     rows = conn.execute(
@@ -115,6 +117,7 @@ _PS_INDICATORS = (
 )
 
 
+@register_detector
 def detect_encoded_powershell(conn) -> list[dict]:
     """Obfuscated / in-memory PowerShell execution = suspicious Execution."""
     signals = []
@@ -137,6 +140,7 @@ _DOWNLOAD_INDICATORS = (
 )
 
 
+@register_detector
 def detect_ingress_tool_transfer(conn) -> list[dict]:
     """DownloadString/certutil/bitsadmin etc. = external download (Ingress Tool Transfer)."""
     signals = []
@@ -159,6 +163,7 @@ _DEFENSE_EVASION_INDICATORS = (
 )
 
 
+@register_detector
 def detect_defense_evasion(conn) -> list[dict]:
     """AMSI bypass or changing Defender settings = defense evasion."""
     signals = []
@@ -175,6 +180,7 @@ def detect_defense_evasion(conn) -> list[dict]:
 # --------------------------------------------------------------------------- #
 # Detector 5: Suspicious Outbound Connection / possible C2 (T1071)
 # --------------------------------------------------------------------------- #
+@register_detector
 def detect_suspicious_network(conn) -> list[dict]:
     """Connection to an external IP on a non-standard port (not 80/443) = possible C2."""
     rows = conn.execute(
@@ -205,6 +211,7 @@ def detect_suspicious_network(conn) -> list[dict]:
 # --------------------------------------------------------------------------- #
 # Detector 6: Scheduled Task Persistence via Sysmon command line (T1053.005)
 # --------------------------------------------------------------------------- #
+@register_detector
 def detect_scheduled_task(conn) -> list[dict]:
     """schtasks /create creating a new scheduled task = possible persistence."""
     signals = []
@@ -223,6 +230,7 @@ def detect_scheduled_task(conn) -> list[dict]:
 # Synthetic data relied on Sysmon command lines; in real EVTX the same techniques
 # appear under different event IDs. These detectors close that gap.
 # --------------------------------------------------------------------------- #
+@register_detector
 def detect_scheduled_task_4698(conn) -> list[dict]:
     """Security EID 4698 = scheduled task created (real-log equivalent)."""
     rows = conn.execute(
@@ -234,6 +242,7 @@ def detect_scheduled_task_4698(conn) -> list[dict]:
     ) for r in rows]
 
 
+@register_detector
 def detect_kerberos_spray(conn) -> list[dict]:
     """Many 4771 (Kerberos pre-authentication failures) = password spray."""
     rows = conn.execute(
@@ -260,6 +269,7 @@ def detect_kerberos_spray(conn) -> list[dict]:
     return signals
 
 
+@register_detector
 def detect_log_cleared(conn) -> list[dict]:
     """Security EID 1102 = event log cleared = indicator removal."""
     rows = conn.execute(
@@ -279,6 +289,7 @@ def detect_log_cleared(conn) -> list[dict]:
 _UNIX_SHELL_ABUSE = ("/dev/tcp/", "/dev/udp/", "bash -i", "sh -i", "nc -e", "ncat -e", "mkfifo")
 
 
+@register_detector
 def detect_unix_shell_abuse(conn) -> list[dict]:
     """Reverse shells (bash -i, /dev/tcp) or execution of a dropped payload = Unix Shell abuse."""
     signals = []
@@ -295,6 +306,7 @@ def detect_unix_shell_abuse(conn) -> list[dict]:
     return signals
 
 
+@register_detector
 def detect_credential_dumping(conn) -> list[dict]:
     """Reading /etc/shadow or /etc/passwd = OS credential dumping (Linux)."""
     signals = []
@@ -308,6 +320,7 @@ def detect_credential_dumping(conn) -> list[dict]:
     return signals
 
 
+@register_detector
 def detect_exfiltration(conn) -> list[dict]:
     """Piping data out via netcat/curl to a remote host = exfiltration over alternative protocol."""
     signals = []
@@ -341,6 +354,7 @@ def _web_text(r) -> str:
     return " ".join(x for x in (r["category"], r["message"], r["tool"], r["url"]) if x).lower()
 
 
+@register_detector
 def detect_web_recon(conn) -> list[dict]:
     """Port/vulnerability scanning against a web app = Active Scanning."""
     signals = []
@@ -355,6 +369,7 @@ def detect_web_recon(conn) -> list[dict]:
     return signals
 
 
+@register_detector
 def detect_web_exploit(conn) -> list[dict]:
     """SQLi / auth bypass / insecure access control = Exploit Public-Facing Application."""
     signals = []
@@ -370,6 +385,7 @@ def detect_web_exploit(conn) -> list[dict]:
     return signals
 
 
+@register_detector
 def detect_payload_upload(conn) -> list[dict]:
     """Uploading an exploit/payload (e.g. Metasploit/Meterpreter) = Ingress Tool Transfer."""
     signals = []
@@ -387,33 +403,13 @@ def detect_payload_upload(conn) -> list[dict]:
 # --------------------------------------------------------------------------- #
 # Runner that executes all detectors
 # --------------------------------------------------------------------------- #
-ALL_DETECTORS = [
-    detect_brute_force,
-    detect_encoded_powershell,
-    detect_ingress_tool_transfer,
-    detect_defense_evasion,
-    detect_suspicious_network,
-    detect_scheduled_task,
-    # Detectors based on real Windows event IDs:
-    detect_scheduled_task_4698,
-    detect_kerberos_spray,
-    detect_log_cleared,
-    # Linux / Unix behavioral detectors:
-    detect_unix_shell_abuse,
-    detect_credential_dumping,
-    detect_exfiltration,
-    # Web / application-layer detectors:
-    detect_web_recon,
-    detect_web_exploit,
-    detect_payload_upload,
-]
-
+from detect.registry import DetectorRegistry
 
 def run_all_detectors() -> list[dict]:
     """Run all detectors and return all signals sorted by time."""
     conn = get_connection()
     signals = []
-    for detector in ALL_DETECTORS:
+    for detector in DetectorRegistry.get_all():
         signals.extend(detector(conn))
     conn.close()
     signals.sort(key=lambda s: s["time"])

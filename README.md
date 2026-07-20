@@ -54,8 +54,10 @@ Raw logs
 | `common/attack.py` | Local MITRE ATT&CK knowledge base (context + validation source) |
 | `common/llm.py` | Foundry Local chat + embedding wrapper |
 | `common/console.py` | Forces terminal output to UTF-8 |
+| `common/logger.py` | Centralized telemetry and error logging |
 | `ingest/ingest.py` | Raw log → unified event → SQLite |
 | `ingest/win_evtx.py` | Parses real Windows EVTX logs into the schema |
+| `detect/registry.py` | Pluggable detector registry (`@register_detector`) |
 | `detect/detectors.py` | Rule-based detectors across Windows, Linux and web sources (brute force, PowerShell, C2, scheduled task, reverse shell, credential dumping, exfiltration, SQLi/exploit, ...) |
 | `detect/correlate.py` | Groups signals into incidents |
 | `reason/context.py` | Builds the evidence package for the LLM |
@@ -136,9 +138,16 @@ python -m reason.retrieve
 Demonstrates the RAG retrieval step: embedding ATT&CK descriptions locally and finding
 the closest technique to a free-text query by cosine similarity.
 
+## Enterprise-Grade Features
+
+This project was recently refactored to include production-ready architecture:
+- **Asynchronous Execution (`asyncio`):** Incident processing now runs concurrently. If there are multiple security incidents, LLM analysis tasks are dispatched in parallel, preventing I/O bottlenecks.
+- **Pluggable Detectors:** A new `DetectorRegistry` allows adding new detection rules simply by using the `@register_detector` decorator. Core execution logic never needs to be modified when adding new rules.
+- **Centralized Telemetry:** All system outputs and errors are now routed through Python's standard `logging` module and saved to `data/soc_assistant.log` (complete with stack traces) for enterprise auditability.
+
 ## Tech stack
 
-Python · Microsoft Foundry Local · on-device LLM & embeddings · SQLite · MITRE ATT&CK ·
+Python (`asyncio`) · Microsoft Foundry Local · on-device LLM & embeddings · SQLite · MITRE ATT&CK ·
 rule-based detection · RAG (evidence assembly + semantic search) · grounding/validation ·
 Streamlit · EVTX parsing
 
