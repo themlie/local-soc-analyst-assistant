@@ -1,0 +1,23 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Local database and large/binary data
+data/*.db
+
+# Real EVTX samples (auto-downloaded by eval/real_eval.py)
+data/real/
+
+# Planning docs (assignment brief, not part of the project)
+*.docx
+*.pdf
+
+# Output/temp
+*.log
+
+# Personal scratch test files
+test.json
+
+# IDE/tool-specific config
+.claude/

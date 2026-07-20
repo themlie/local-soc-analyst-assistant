@@ -1,0 +1,12 @@
+[
+  {"time": "2026-07-03T14:02:11", "host": "WIN-SRV01", "source": "Security", "event_id": 4625, "user": "backup_svc", "ip": "185.220.101.7"},
+  {"time": "2026-07-03T14:02:19", "host": "WIN-SRV01", "source": "Security", "event_id": 4625, "user": "backup_svc", "ip": "185.220.101.7"},
+  {"time": "2026-07-03T14:02:44", "host": "WIN-SRV01", "source": "Security", "event_id": 4625, "user": "backup_svc", "ip": "185.220.101.7"},
+  {"time": "2026-07-03T14:03:02", "host": "WIN-SRV01", "source": "Security", "event_id": 4624, "user": "backup_svc", "ip": "185.220.101.7"},
+  {"time": "2026-07-03T14:03:40", "host": "WIN-SRV01", "source": "Sysmon", "event_id": 1, "user": "backup_svc", "image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "cmdline": "powershell -nop -w hidden -enc SQBFAFgAKABuAGUAdwAtAG8AYgBqAGUAYwB0ACAAbgBlAHQALgB3AGUAYgBjAGwAaQBlAG4AdAApAA==", "parent": "cmd.exe"},
+  {"time": "2026-07-03T14:03:55", "host": "WIN-SRV01", "source": "Sysmon", "event_id": 3, "user": "backup_svc", "image": "powershell.exe", "dest_ip": "45.9.148.22", "dest_port": 4444},
+  {"time": "2026-07-03T14:04:20", "host": "WIN-SRV01", "source": "Sysmon", "event_id": 1, "user": "backup_svc", "image": "C:\\Windows\\System32\\schtasks.exe", "cmdline": "schtasks /create /tn WindowsUpdater /tr C:\\Users\\Public\\u.exe /sc onlogon /ru SYSTEM", "parent": "powershell.exe"},
+  {"time": "2026-07-03T14:05:10", "host": "WIN-WKS07", "source": "Security", "event_id": 4624, "user": "alice", "ip": "10.0.0.14"},
+  {"time": "2026-07-03T14:06:00", "host": "WIN-WKS07", "source": "Sysmon", "event_id": 1, "user": "alice", "image": "C:\\Program Files\\Git\\git.exe", "cmdline": "git status", "parent": "explorer.exe"},
+  {"time": "2026-07-03T14:12:30", "host": "WIN-WKS07", "source": "Security", "event_id": 4634, "user": "alice", "ip": "10.0.0.14"}
+]
