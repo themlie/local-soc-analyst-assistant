@@ -150,6 +150,9 @@ if run_btn:
         else:
             st.warning(f"Sistemde {len(incidents)} adet şüpheli vaka tespit edildi! Yapay zeka analizi başlıyor...")
             
+            if "phi" in model.lower() or "llama" in model.lower():
+                st.info("⏳ **Bilgi:** Seçtiğiniz model yüksek kapasitelidir. Analizin tamamlanması **2-3 dakika** sürebilir. İşlemin iptal olmaması için lütfen rapor ekrana gelene kadar sayfada hiçbir yere tıklamadan bekleyin.")
+            
             for idx, incident in enumerate(incidents, 1):
                 sev = incident["severity"]
                 
