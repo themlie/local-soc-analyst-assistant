@@ -153,9 +153,14 @@ if run_btn:
             for idx, incident in enumerate(incidents, 1):
                 sev = incident["severity"]
                 
-                with st.spinner(f"Vaka #{idx} ({incident['host']}) yapay zeka tarafından analiz ediliyor (Model yükleniyor olabilir)..."):
-                    report = analyze_incident(incident, alias=model)
-                    validation = validate_report(report, incident)
+                try:
+                    with st.spinner(f"Vaka #{idx} ({incident['host']}) yapay zeka tarafından analiz ediliyor (Model yükleniyor olabilir)..."):
+                        report = analyze_incident(incident, alias=model)
+                        validation = validate_report(report, incident)
+                except Exception as e:
+                    st.error(f"Yapay zeka analizi iptal edildi veya başarısız oldu: {str(e)}")
+                    st.info("İpucu: İşlem sırasında sayfayı yenilemiş veya farklı bir butona tıklamış olabilirsiniz. Lütfen 'Analizi Başlat' butonuna sadece bir kez tıklayıp bekleyin.")
+                    continue
                 
                 # Render Incident Card
                 st.markdown(f'<div class="incident-card">', unsafe_allow_html=True)
