@@ -18,11 +18,23 @@ from validate.grounding import validate_report
 from common.db import get_connection
 from config import LOG_PATH, CHAT_MODEL
 
-st.set_page_config(page_title="SOC Analyst AI", page_icon="🛡️", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="SOC Analyst AI", layout="wide", initial_sidebar_state="collapsed")
 
 # Custom CSS for UI/UX improvements (focusing on cards, buttons, and readable inputs)
 st.markdown("""
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif !important;
+        font-size: 1.05rem !important;
+    }
+    
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 800 !important;
+    }
+    
     /* Make the top padding smaller */
     .block-container {
         padding-top: 2rem;
@@ -35,8 +47,9 @@ st.markdown("""
         color: white !important;
         border-radius: 8px;
         border: none;
-        padding: 0.5rem 2rem;
+        padding: 0.6rem 2rem;
         font-weight: 600;
+        font-size: 1.1rem !important;
         box-shadow: 0 4px 14px 0 rgba(59,130,246,0.39);
         transition: all 0.2s ease-in-out;
     }
@@ -47,7 +60,7 @@ st.markdown("""
     
     /* Make metrics pop */
     div[data-testid="stMetricValue"] {
-        font-size: 2.5rem;
+        font-size: 2.8rem !important;
         font-weight: 800;
         color: #8b5cf6;
     }
@@ -66,19 +79,20 @@ st.markdown("""
         background-color: #1f1f23 !important;
         color: #f4f4f5 !important;
         border-radius: 8px !important;
+        font-size: 1.1rem !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-_SEV_COLOR = {"low": "🟢", "medium": "🟡", "high": "🟠", "critical": "🔴"}
+_SEV_COLOR = {"low": "[LOW]", "medium": "[MEDIUM]", "high": "[HIGH]", "critical": "[CRITICAL]"}
 
 # --- Main Header ---
 col1, col2 = st.columns([3, 1])
 with col1:
-    st.title("🛡️ SOC Analyst Assistant")
+    st.title("SOC Analyst Assistant")
     st.markdown("Yapay Zeka Destekli Otonom Siber Güvenlik Merkezi")
 with col2:
-    st.info("💡 **Durum:** Çevrimdışı (Air-Gapped)\n\nVeriler buluta çıkmaz.")
+    st.info("Durum: Çevrimdışı (Air-Gapped)\n\nVeriler buluta çıkmaz.")
 
 st.divider()
 
@@ -100,7 +114,7 @@ def load_logs() -> list[dict]:
 with col_btn:
     st.write("") # Spacing
     st.write("")
-    run_btn = st.button("🚀 Analizi Başlat", type="primary", use_container_width=True)
+    run_btn = st.button("Analizi Başlat", type="primary", use_container_width=True)
 
 st.divider()
 
@@ -109,16 +123,16 @@ if run_btn:
         logs = load_logs()
         n = ingest_events(logs)
     
-    st.success(f"✅ {n} adet olay (event) başarıyla veritabanına işlendi.")
+    st.success(f"{n} adet olay (event) başarıyla veritabanına işlendi.")
     
-    tab_incidents, tab_raw = st.tabs(["🚨 Tespit Edilen Vakalar (Incidents)", "📋 Ham Loglar (Raw Data)"])
+    tab_incidents, tab_raw = st.tabs(["Tespit Edilen Vakalar (Incidents)", "Ham Loglar (Raw Data)"])
 
     with tab_incidents:
         incidents = build_incidents()
         if not incidents:
-            st.success("🎉 Harika! Sistemde şüpheli hiçbir hareket bulunamadı. Loglar temiz.")
+            st.success("Harika! Sistemde şüpheli hiçbir hareket bulunamadı. Loglar temiz.")
         else:
-            st.warning(f"⚠️ Sistemde {len(incidents)} adet şüpheli vaka tespit edildi! Yapay zeka analizi başlıyor...")
+            st.warning(f"Sistemde {len(incidents)} adet şüpheli vaka tespit edildi! Yapay zeka analizi başlıyor...")
             
             for idx, incident in enumerate(incidents, 1):
                 sev = incident["severity"]
@@ -129,28 +143,28 @@ if run_btn:
                 
                 # Render Incident Card
                 st.markdown(f'<div class="incident-card">', unsafe_allow_html=True)
-                icon = _SEV_COLOR.get(str(report.get("severity", sev)).lower(), "⚪")
+                icon = _SEV_COLOR.get(str(report.get("severity", sev)).lower(), "")
                 st.subheader(f"{icon} Vaka #{idx} — Hedef: {incident['host']}")
                 
                 c1, c2 = st.columns([3, 1])
                 with c1:
-                    st.markdown(f"**📝 Özet:** {report.get('summary', '-')}")
+                    st.markdown(f"**Özet:** {report.get('summary', '-')}")
                     
-                    st.markdown("**⏱️ Zaman Çizelgesi (Timeline):**")
+                    st.markdown("**Zaman Çizelgesi (Timeline):**")
                     for item in report.get("timeline", []) or []:
                         if isinstance(item, dict):
                             st.markdown(f"- `{item.get('time','')}` {item.get('description','')}")
                         else:
                             st.markdown(f"- {item}")
                             
-                    st.markdown("**🔗 Saldırı Zinciri (MITRE ATT&CK):**")
+                    st.markdown("**Saldırı Zinciri (MITRE ATT&CK):**")
                     for step in report.get("attack_chain", []) or []:
                         if isinstance(step, dict):
                             st.markdown(f"- **{step.get('technique','')}** ({step.get('tactic','')}): {step.get('explanation','')}")
                         else:
                             st.markdown(f"- {step}")
                             
-                    st.markdown("**🛡️ Önerilen Aksiyonlar:**")
+                    st.markdown("**Önerilen Aksiyonlar:**")
                     for act in report.get("recommended_actions", []) or []:
                         st.markdown(f"- {act}")
 
@@ -159,9 +173,9 @@ if run_btn:
                     st.metric("Yapay Zeka Güven Skoru", f"{validation['trust_score'] * 100:.0f}%")
                     
                     if validation["grounded"]:
-                        st.success("✅ Doğrulandı\n(Kanıtlara Dayalı)")
+                        st.success("Doğrulandı (Kanıtlara Dayalı)")
                     else:
-                        st.error("⚠️ Dikkat\n(Kanıtsız İddialar Var)")
+                        st.error("Dikkat (Kanıtsız İddialar Var)")
                         
                     if validation["warnings"]:
                         with st.expander("Gözlemler / Uyarılar"):
@@ -185,4 +199,4 @@ if run_btn:
             data = [{c: row[c] for c in non_empty} for row in data]
         st.dataframe(data, use_container_width=True)
 else:
-    st.info("👆 Lütfen yukarıdan log dosyanızı seçin (veya boş bırakın) ve 'Analizi Başlat' butonuna tıklayın.")
+    st.info("Lütfen yukarıdan log dosyanızı seçin (veya boş bırakın) ve 'Analizi Başlat' butonuna tıklayın.")
