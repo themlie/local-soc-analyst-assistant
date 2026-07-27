@@ -21,3 +21,7 @@ test.json
 
 # IDE/tool-specific config
 .claude/
+
+# Local baseline snapshot
+baseline.txt
+.pytest_cache/
