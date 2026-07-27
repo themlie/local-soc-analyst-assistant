@@ -21,15 +21,11 @@ An INCIDENT has this shape:
 """
 
 import common.console  # noqa: F401
-from datetime import datetime
+from common.timeutil import parse_time as _parse_time
 from config import CORRELATION_WINDOW
 from detect.detectors import run_all_detectors
 
 _SEVERITY_ORDER = {"low": 0, "medium": 1, "high": 2}
-
-
-def _parse_time(t: str) -> datetime:
-    return datetime.fromisoformat(t)
 
 
 def correlate(signals: list[dict]) -> list[dict]:

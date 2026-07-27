@@ -1,5 +1,8 @@
 """
-reason/retrieve.py — SEMANTIC SEARCH over ATT&CK (embeddings + vector similarity).
+STANDALONE EXPERIMENT — NOT part of the analysis pipeline. Kept to document an approach that was evaluated and deliberately not adopted: dense retrieval is not meaningful over a 15-technique catalog.
+
+experiments/attack_semantic_search.py — SEMANTIC SEARCH over ATT&CK
+(embeddings + vector similarity).
 
 This is the pure "retrieval" step of classic RAG. Detectors are rule-based and only
 catch patterns they know. But to map a free-text observation (e.g. "running code

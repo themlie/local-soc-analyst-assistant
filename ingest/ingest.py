@@ -13,6 +13,7 @@ common ALIASES (case-insensitive), instead of requiring one exact name.
 import json
 import common.console  # noqa: F401
 from common.db import get_connection
+from common.timeutil import to_canonical
 from config import LOG_PATH
 
 # For each unified field, the raw key names we accept (lowercase).
@@ -54,7 +55,9 @@ def normalize_event(raw: dict) -> dict:
         http = {}
 
     ev = {
-        "time": _resolve(low, "time"),
+        # Canonical UTC so that events from different sources (naive JSON vs
+        # tz-aware EVTX) can be compared and sorted without special-casing.
+        "time": to_canonical(_resolve(low, "time")),
         "host": _resolve(low, "host"),
         "source": _resolve(low, "source"),
         "event_id": _resolve(low, "event_id"),
@@ -116,16 +119,43 @@ _COLUMNS = ["time", "host", "source", "event_id", "user", "src_ip", "dst_ip",
 
 def ingest_events(raw_events: list[dict]) -> int:
     """Normalize a LIST of raw events and write them to the database.
-    Used by both normal runs and evaluation (loading scenario by scenario)."""
+    Used by both normal runs and evaluation (loading scenario by scenario).
+
+    Raises ValueError on input that cannot be ingested. Validation and normalization
+    both happen before the database is touched: a bad upload must never destroy the
+    data that is already there.
+    """
+    if not isinstance(raw_events, list):
+        raise ValueError(
+            "Log file must be a JSON array of event objects, "
+            f"got {type(raw_events).__name__}."
+        )
+    bad = [i for i, e in enumerate(raw_events) if not isinstance(e, dict)]
+    if bad:
+        raise ValueError(
+            f"Events at index {bad[:3]} are not objects; every event must be a JSON object."
+        )
+
+    normalized = [normalize_event(raw) for raw in raw_events]
+    # An event we cannot place in time cannot be correlated, so drop it rather than
+    # let it crash a later stage — but a batch with no usable event at all is an error.
+    usable = [e for e in normalized if e["time"]]
+    if raw_events and not usable:
+        raise ValueError(
+            "No usable events: none of them carry a parsable timestamp."
+        )
+    skipped = len(normalized) - len(usable)
+    if skipped:
+        print(f"[ingest]    warning: skipped {skipped} event(s) with no parsable timestamp.")
+
     conn = get_connection()
     conn.execute("DROP TABLE IF EXISTS events")  # rebuild fresh (schema may evolve)
     create_table(conn)
 
     placeholders = ", ".join(f":{c}" for c in _COLUMNS)
     columns = ", ".join(_COLUMNS)
-    for raw in raw_events:
-        conn.execute(f"INSERT INTO events ({columns}) VALUES ({placeholders})",
-                     normalize_event(raw))
+    for ev in usable:
+        conn.execute(f"INSERT INTO events ({columns}) VALUES ({placeholders})", ev)
 
     conn.commit()
     count = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]

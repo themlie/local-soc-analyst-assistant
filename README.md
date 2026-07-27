@@ -10,8 +10,12 @@ prevent hallucinations.
 **Data never leaves the machine** — designed for security telemetry that cannot be sent
 to the cloud.
 
+**Offline scope (precise):** Inference, embeddings, detection and storage are fully local — no network calls at analysis time. *Bootstrap is not offline:* the first model download and `eval/real_eval.py`'s sample fetch require internet. On an air-gapped host, pre-stage the model cache and the EVTX samples. Streamlit telemetry is disabled via `.streamlit/config.toml`.
+
 > Built as a one-month learning project around Microsoft Foundry Local. It runs on CPU,
 > with no cloud account and no GPU required.
+
+**Positioning:** This is a *detection engineering + LLM-assisted triage* system, not a document-RAG application. Detection is deterministic and rule-based by design; the local LLM explains and correlates findings but never decides whether something is malicious.
 
 ## Why this matters
 
@@ -62,7 +66,6 @@ Raw logs
 | `detect/correlate.py` | Groups signals into incidents |
 | `reason/context.py` | Builds the evidence package for the LLM |
 | `reason/analyst.py` | Produces a structured analysis with the local LLM |
-| `reason/retrieve.py` | Embedding-based semantic search over ATT&CK (RAG retrieval) |
 | `validate/grounding.py` | Hallucination shield: validates claims against evidence |
 | `ui/report.py` | Prints the result as a readable report |
 | `ui/app.py` | Streamlit web interface (clickable demo) |
@@ -129,14 +132,16 @@ Beyond synthetic JSON, the system also analyzes **real Windows EVTX** logs from
 (real attack logs labeled by ATT&CK). `eval/real_eval.py` downloads the required samples
 automatically on first run.
 
-## Semantic ATT&CK search (embedding demo)
+## Experiments (not part of the pipeline)
 
 ```powershell
-python -m reason.retrieve
+python -m experiments.attack_semantic_search
 ```
 
-Demonstrates the RAG retrieval step: embedding ATT&CK descriptions locally and finding
-the closest technique to a free-text query by cosine similarity.
+An approach that was evaluated and deliberately not adopted: embedding ATT&CK
+descriptions locally and ranking them against a free-text query by cosine similarity.
+Dense retrieval adds little over a 15-technique catalog, so the analysis pipeline does
+not use it — the file is kept only to document the experiment.
 
 ## Enterprise-Grade Features
 
@@ -148,7 +153,7 @@ This project was recently refactored to include production-ready architecture:
 ## Tech stack
 
 Python (`asyncio`) · Microsoft Foundry Local · on-device LLM & embeddings · SQLite · MITRE ATT&CK ·
-rule-based detection · RAG (evidence assembly + semantic search) · grounding/validation ·
+rule-based detection · evidence-package construction · grounding/validation ·
 Streamlit · EVTX parsing
 
 ## Known gaps / future work

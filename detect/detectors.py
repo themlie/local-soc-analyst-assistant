@@ -23,16 +23,12 @@ are combined. Resilience to evasion is measured with eval/golden.json.
 """
 
 import common.console  # noqa: F401
-from datetime import datetime
 from ipaddress import ip_address
 from common.db import get_connection
+from common.timeutil import parse_time as _parse_time
 from config import BRUTE_FORCE_THRESHOLD, BRUTE_FORCE_WINDOW, KERBEROS_FAILURE_THRESHOLD
 from collections import defaultdict
 from detect.registry import register_detector
-
-
-def _parse_time(t: str) -> datetime:
-    return datetime.fromisoformat(t)
 
 
 def _is_external(ip: str) -> bool:
