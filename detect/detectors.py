@@ -22,6 +22,7 @@ Note: simple keyword rules can be weak against evasion; that's why several indic
 are combined. Resilience to evasion is measured with eval/golden.json.
 """
 
+import re
 import common.console  # noqa: F401
 from ipaddress import ip_address
 from common.db import get_connection
@@ -350,14 +351,27 @@ def _web_text(r) -> str:
     return " ".join(x for x in (r["category"], r["message"], r["tool"], r["url"]) if x).lower()
 
 
+def _matches_any(text: str, keywords) -> str | None:
+    """First keyword occurring as a whole word/phrase, or None.
+
+    Web rules read prose and URLs, where a bare substring search collides with
+    ordinary language: "scan" inside "scandal", "bypass" inside "bypassword". An
+    alert an analyst has to dismiss costs more than it is worth, so these match on
+    word boundaries rather than anywhere in the string.
+    """
+    for kw in keywords:
+        if re.search(rf"\b{re.escape(kw)}\b", text):
+            return kw
+    return None
+
+
 @register_detector
 def detect_web_recon(conn) -> list[dict]:
     """Port/vulnerability scanning against a web app = Active Scanning."""
     signals = []
     for r in _web_rows(conn):
-        t = _web_text(r)
-        if any(k in t for k in ("reconnaissance", "nmap", "masscan", "port scan",
-                                "connection attempts", "scanning", "scan")):
+        if _matches_any(_web_text(r), ("reconnaissance", "nmap", "masscan", "port scan",
+                                       "connection attempts", "scanning", "scan")):
             signals.append(_signal(
                 "web_reconnaissance", "T1595", "Active Scanning", "medium", r,
                 f"Web scanning/recon from {r['src_ip']} — {r['message'] or r['category']}",
@@ -370,9 +384,9 @@ def detect_web_exploit(conn) -> list[dict]:
     """SQLi / auth bypass / insecure access control = Exploit Public-Facing Application."""
     signals = []
     for r in _web_rows(conn):
-        t = _web_text(r)
-        if any(k in t for k in ("sql injection", "sqlmap", "web_attack", "access_control",
-                                "idor", "authentication_bypass", "jwt", "bypass", "burpsuite")):
+        if _matches_any(_web_text(r), ("sql injection", "sqlmap", "web_attack", "access_control",
+                                       "idor", "authentication_bypass", "jwt", "bypass",
+                                       "burpsuite")):
             signals.append(_signal(
                 "web_exploit", "T1190", "Exploit Public-Facing Application", "high", r,
                 f"Web application exploit attempt — {r['message'] or r['category']} "
@@ -386,8 +400,10 @@ def detect_payload_upload(conn) -> list[dict]:
     """Uploading an exploit/payload (e.g. Metasploit/Meterpreter) = Ingress Tool Transfer."""
     signals = []
     for r in _web_rows(conn):
-        t = _web_text(r)
-        if any(k in t for k in ("exploitation", "metasploit", "meterpreter", "payload")):
+        # "payload" is deliberately absent: it is ordinary language ("JSON payload")
+        # and matched benign traffic. The tool names carry the actual signal.
+        if _matches_any(_web_text(r), ("exploitation", "metasploit", "meterpreter",
+                                       "reverse_tcp", "shellcode")):
             signals.append(_signal(
                 "payload_upload", "T1105", "Ingress Tool Transfer", "high", r,
                 f"Malicious payload/exploit delivery — {r['message'] or r['category']} "

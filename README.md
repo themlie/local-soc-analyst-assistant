@@ -1,5 +1,7 @@
 # Local SOC Analyst Assistant (Air-Gapped)
 
+[![CI](https://github.com/themlie/local-soc-analyst-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/themlie/local-soc-analyst-assistant/actions/workflows/ci.yml)
+
 An AI-powered SOC (Security Operations Center) analyst assistant that analyzes security
 logs **fully offline**. It ingests raw Windows/Sysmon logs, flags suspicious activity
 with rule-based detectors, correlates them into an attack chain, and uses a **local LLM
@@ -113,7 +115,22 @@ python -m eval.real_eval             # recall on real EVTX samples
 ```
 
 The detection evaluation is deterministic (needs no LLM), so it's fast and repeatable —
-ideal for regression tracking as the code evolves.
+which is what lets it act as a regression gate rather than a report:
+
+```powershell
+python -m eval.evaluate --min-precision 0.95 --min-recall 0.90   # exits 1 on regression
+```
+
+CI runs the tests and this gate on every push across Python 3.11–3.13. It installs only
+`pytest`: the ingest, detection, correlation and validation layers are pure standard
+library, so pulling in the on-device model runtime would cost minutes without covering
+an extra line. Anything that needs a model is measured locally with
+`eval/grounding_eval.py`.
+
+The suite covers every registered detector (one firing case each), a benign corpus that
+must produce **zero** alerts, cross-host campaign linking including four over-linking
+guards, prompt-injection containment, and timestamp/schema robustness. A meta-test fails
+the build if a detector is added without a case, so coverage cannot quietly rot.
 
 ## Results
 

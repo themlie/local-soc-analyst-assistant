@@ -23,7 +23,7 @@ from detect.detectors import run_all_detectors
 GOLDEN_PATH = ROOT / "eval" / "golden.json"
 
 
-def evaluate() -> None:
+def evaluate() -> dict:
     cases = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
 
     total_tp = total_fp = total_fn = 0
@@ -80,6 +80,31 @@ def evaluate() -> None:
     # Evaluation mutated the data, so restore the demo data
     ingest_file()
 
+    return {"precision": precision, "recall": recall, "f1": f1,
+            "classification_accuracy": class_acc}
+
 
 if __name__ == "__main__":
-    evaluate()
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description="Detection accuracy evaluation")
+    # Thresholds turn this script into a regression gate: continuous integration can
+    # fail the build when a change quietly makes detection worse, which is the whole
+    # reason the evaluation is deterministic and LLM-free.
+    parser.add_argument("--min-precision", type=float, default=None)
+    parser.add_argument("--min-recall", type=float, default=None)
+    args = parser.parse_args()
+
+    metrics = evaluate()
+
+    failures = [
+        f"{name} {metrics[name]:.2%} is below the required {floor:.2%}"
+        for name, floor in (("precision", args.min_precision), ("recall", args.min_recall))
+        if floor is not None and metrics[name] < floor
+    ]
+    if failures:
+        print("\nREGRESSION:")
+        for f in failures:
+            print(f"  - {f}")
+        sys.exit(1)
