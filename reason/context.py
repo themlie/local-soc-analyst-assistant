@@ -95,4 +95,15 @@ def build_context(incident: dict) -> str:
     for t in incident["techniques"]:
         lines.append("  - " + describe(t))
 
+    # Small models tend to explain the first technique and stop, and to invent a
+    # tactic name. Restating the requirement concretely, right before the answer,
+    # measurably reduces both (validate/grounding.py flags them as MISSING and
+    # WRONG TACTIC).
+    required = ", ".join(incident["techniques"])
+    lines += [
+        "",
+        f"REQUIRED: attack_chain must contain one entry for EACH of these techniques: {required}.",
+        "Copy each tactic string exactly as written in the reference section above.",
+    ]
+
     return "\n".join(lines)
