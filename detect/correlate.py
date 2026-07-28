@@ -21,8 +21,10 @@ An INCIDENT has this shape:
 """
 
 import common.console  # noqa: F401
+from collections import Counter, defaultdict
+from common.db import get_connection
 from common.timeutil import parse_time as _parse_time
-from config import CORRELATION_WINDOW
+from config import CORRELATION_WINDOW, CAMPAIGN_WINDOW
 from detect.detectors import run_all_detectors
 
 _SEVERITY_ORDER = {"low": 0, "medium": 1, "high": 2}
@@ -78,9 +80,133 @@ def _build_incident(host: str, signals: list[dict]) -> dict:
     }
 
 
+# --------------------------------------------------------------------------- #
+# Campaign linking: incidents on DIFFERENT hosts that belong to one attack
+#
+# Grouping by host answers "what happened on this machine". It cannot answer "did
+# the same intruder move between machines" — and lateral movement is exactly what an
+# analyst most needs to see. Two incidents belong to the same campaign when they
+# share an entity (a pivot IP, or the same non-generic account) and sit close enough
+# in time.
+#
+# Incidents are LINKED, not merged: per-host triage stays intact, and every layer
+# above (validation, reporting, evaluation) keeps working on the same structure.
+# --------------------------------------------------------------------------- #
+
+# Accounts that say nothing about *who* is acting — linking on these would tie
+# together unrelated machines that merely both have an administrator.
+_GENERIC_ACCOUNTS = {
+    "root", "system", "localsystem", "administrator", "admin", "-",
+    "network service", "local service", "nt authority\\system",
+}
+
+
+def _entities(conn, event_ids: list[int]) -> tuple[set, set]:
+    """Return the (ip, account) identifiers an incident touched."""
+    if not event_ids:
+        return set(), set()
+    placeholders = ",".join("?" for _ in event_ids)
+    rows = conn.execute(
+        f"SELECT src_ip, dst_ip, user FROM events WHERE id IN ({placeholders})",
+        event_ids,
+    ).fetchall()
+
+    ips, users = set(), set()
+    for r in rows:
+        for ip in (r["src_ip"], r["dst_ip"]):
+            if ip:
+                ips.add(ip)
+        user = (r["user"] or "").strip().lower()
+        if user and user not in _GENERIC_ACCOUNTS:
+            users.add(user)
+    return ips, users
+
+
+def _near_in_time(a: dict, b: dict) -> bool:
+    """Do two incidents sit within CAMPAIGN_WINDOW of each other?"""
+    a_start, a_end = _parse_time(a["start"]), _parse_time(a["end"])
+    b_start, b_end = _parse_time(b["start"]), _parse_time(b["end"])
+    if a_start <= b_end and b_start <= a_end:
+        return True  # overlapping
+    gap = b_start - a_end if b_start > a_end else a_start - b_end
+    return gap <= CAMPAIGN_WINDOW
+
+
+def link_campaigns(incidents: list[dict]) -> list[dict]:
+    """Tag incidents that belong to one cross-host campaign with a shared id."""
+    for inc in incidents:  # defaults, so callers can rely on the keys existing
+        inc["campaign_id"] = None
+        inc["related_hosts"] = []
+        inc["campaign_peers"] = []
+    if len(incidents) < 2:
+        return incidents
+
+    conn = get_connection()
+    entities = [_entities(conn, inc["event_ids"]) for inc in incidents]
+    conn.close()
+
+    # An address seen almost everywhere is shared infrastructure (a DNS resolver, a
+    # proxy), not evidence of one intruder. Only filter once there are enough
+    # incidents for "almost everywhere" to mean anything.
+    ip_counts = Counter(ip for ips, _ in entities for ip in ips)
+    infrastructure = {ip for ip, n in ip_counts.items()
+                      if n >= 4 and n > len(incidents) / 2}
+
+    parent = list(range(len(incidents)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[max(ri, rj)] = min(ri, rj)
+
+    for i in range(len(incidents)):
+        for j in range(i + 1, len(incidents)):
+            if incidents[i]["host"] == incidents[j]["host"]:
+                continue  # same host is already one incident
+            if not _near_in_time(incidents[i], incidents[j]):
+                continue
+            shared_ips = (entities[i][0] & entities[j][0]) - infrastructure
+            shared_users = entities[i][1] & entities[j][1]
+            if shared_ips or shared_users:
+                union(i, j)
+
+    # Only groups with more than one incident are a campaign worth naming.
+    groups = defaultdict(list)
+    for idx in range(len(incidents)):
+        groups[find(idx)].append(idx)
+
+    campaign_no = 0
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        campaign_no += 1
+        members.sort(key=lambda m: incidents[m]["start"])  # chronological = attack order
+        hosts = [incidents[m]["host"] for m in members]
+        for m in members:
+            incidents[m]["campaign_id"] = campaign_no
+            incidents[m]["related_hosts"] = [h for h in hosts if h != incidents[m]["host"]]
+            # What the other hosts saw, so the reasoning layer can describe the
+            # movement between them instead of three disconnected stories.
+            incidents[m]["campaign_peers"] = [
+                {
+                    "host": incidents[p]["host"],
+                    "start": incidents[p]["start"],
+                    "techniques": list(incidents[p]["techniques"]),
+                }
+                for p in members if p != m
+            ]
+    return incidents
+
+
 def build_incidents() -> list[dict]:
-    """End-to-end shortcut: run detectors -> group signals into incidents."""
-    return correlate(run_all_detectors())
+    """End-to-end shortcut: detectors -> per-host incidents -> campaign links."""
+    return link_campaigns(correlate(run_all_detectors()))
 
 
 if __name__ == "__main__":

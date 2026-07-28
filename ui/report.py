@@ -22,6 +22,9 @@ def render_report(incident: dict, report: dict, validation: dict) -> None:
     print("=" * 70)
     print(f"{icon}  INCIDENT REPORT — {incident['host']}   [severity: {sev.upper()}]")
     print(f"    Time range: {incident['start']} -> {incident['end']}")
+    if incident.get("campaign_id"):
+        related = ", ".join(incident.get("related_hosts", []))
+        print(f"    🔗 CAMPAIGN #{incident['campaign_id']} — also affects: {related}")
     if model_sev and model_sev != sev:
         print(f"    (model suggested '{model_sev}' — the detector rating stands)")
     print("=" * 70)
@@ -56,8 +59,12 @@ def render_report(incident: dict, report: dict, validation: dict) -> None:
 
     # Validation (hallucination shield)
     print("\n> VALIDATION (grounding)")
-    mark = "✅ TRUSTWORTHY" if validation["grounded"] else "⚠️  CAUTION"
-    print(f"  {mark}  |  trust score: {validation['trust_score']}")
+    # The score measures how well the reported techniques match the evidence; a report
+    # can score well there and still be rejected for something else (a severity
+    # downgrade, say), so point at the reasons rather than leaving them looking
+    # contradictory.
+    mark = "✅ TRUSTWORTHY" if validation["grounded"] else "⚠️  CAUTION — see findings below"
+    print(f"  {mark}  |  technique grounding: {validation['trust_score']}")
     if validation["warnings"]:
         for w in validation["warnings"]:
             print(f"    - {w}")

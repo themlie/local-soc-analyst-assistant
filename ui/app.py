@@ -180,6 +180,13 @@ if run_btn:
                 # crafted log text must not be able to talk an incident down to "low".
                 icon = _SEV_COLOR.get(str(sev).lower(), "")
                 st.subheader(f"{icon} Vaka #{idx} — Hedef: {incident['host']}")
+                if incident.get("campaign_id"):
+                    _related = ", ".join(incident.get("related_hosts", []))
+                    st.warning(
+                        f"🔗 **Kampanya #{incident['campaign_id']}** — bu vaka şu sunucularla "
+                        f"aynı saldırı zincirine bağlı: **{_related}** (ortak pivot IP/hesap). "
+                        f"Yanal hareket (lateral movement) şüphesi."
+                    )
                 
                 c1, c2 = st.columns([3, 1])
                 with c1:

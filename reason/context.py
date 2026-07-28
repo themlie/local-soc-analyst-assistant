@@ -95,6 +95,21 @@ def build_context(incident: dict) -> str:
     for t in incident["techniques"]:
         lines.append("  - " + describe(t))
 
+    # Activity on other hosts that correlation tied to the same campaign. Without it
+    # the model sees one machine and describes an isolated event, when the finding
+    # that actually matters is that the intruder moved between machines.
+    peers = incident.get("campaign_peers") or []
+    if peers:
+        lines += ["", "SAME CAMPAIGN — RELATED ACTIVITY ON OTHER HOSTS:"]
+        for p in peers:
+            lines.append(
+                f"  - {_clip(p['host'])} at {_clip(p['start'])}: {', '.join(p['techniques'])}"
+            )
+        lines.append(
+            "  These hosts are linked by a shared pivot address or account. Treat this "
+            "as one campaign and say so if the evidence supports lateral movement."
+        )
+
     # Small models tend to explain the first technique and stop, and to invent a
     # tactic name. Restating the requirement concretely, right before the answer,
     # measurably reduces both (validate/grounding.py flags them as MISSING and

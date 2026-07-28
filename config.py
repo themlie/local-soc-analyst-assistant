@@ -61,3 +61,8 @@ MAX_CONTEXT_EVENTS = 50
 # --- Correlation ---
 # Signals on the same host within this window are grouped into a single incident.
 CORRELATION_WINDOW = timedelta(minutes=15)
+
+# Incidents on DIFFERENT hosts that share an entity (a pivot IP, or the same
+# non-generic account) within this window are linked into one campaign. Wider than
+# CORRELATION_WINDOW because lateral movement takes longer than a single host's burst.
+CAMPAIGN_WINDOW = timedelta(hours=1)
