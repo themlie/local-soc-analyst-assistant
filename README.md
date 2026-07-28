@@ -37,7 +37,8 @@ Raw logs
 [detect]    → rule-based detectors flag suspicious events as ATT&CK-tagged signals
    │
    ▼
-[correlate] → group signals by host + time window into a single incident
+[correlate] → group signals by host + time window into incidents, then link
+              incidents that share a pivot address or account into one campaign
    │
    ▼
 [reason]    → build an evidence package + generate analysis with the local LLM
@@ -63,7 +64,8 @@ Raw logs
 | `ingest/win_evtx.py` | Parses real Windows EVTX logs into the schema |
 | `detect/registry.py` | Pluggable detector registry (`@register_detector`) |
 | `detect/detectors.py` | Rule-based detectors across Windows, Linux and web sources (brute force, PowerShell, C2, scheduled task, reverse shell, credential dumping, exfiltration, SQLi/exploit, ...) |
-| `detect/correlate.py` | Groups signals into incidents |
+| `detect/correlate.py` | Groups signals into per-host incidents, then links incidents across hosts into campaigns |
+| `common/timeutil.py` | Normalizes every log timestamp to timezone-aware UTC |
 | `reason/context.py` | Builds the evidence package for the LLM |
 | `reason/analyst.py` | Produces a structured analysis with the local LLM |
 | `validate/grounding.py` | Hallucination shield: validates claims against evidence |
@@ -104,6 +106,7 @@ attacks (scanning, SQL injection, exploitation) — each mapped to the right ATT
 ## Evaluation
 
 ```powershell
+python -m pytest tests/ -q           # regression tests (fast, no LLM)
 python -m eval.evaluate              # detection metrics (fast, no LLM)
 python -m eval.grounding_eval --limit 3   # LLM grounding metrics
 python -m eval.real_eval             # recall on real EVTX samples
@@ -118,12 +121,23 @@ ideal for regression tracking as the code evolves.
 |---|---|
 | Synthetic data | Precision **100%**, Recall **92.9%**, F1 **96.3%** |
 | Real data (EVTX-ATTACK-SAMPLES) | Recall **75%** (3/4 techniques) |
-| LLM grounding | 100% grounded, 0 hallucinations |
+| Regression tests | 15/15 passing |
 
-The synthetic-vs-real gap is intentional and honest: real-world telemetry uses different
-event schemas (e.g. scheduled task = Security 4698, password spray = Kerberos 4771), and
-simple rules can't catch every technique. The remaining misses are documented as known
-gaps — a roadmap for future detectors, not hidden failures.
+**Read the synthetic numbers with suspicion.** Those scenarios were written alongside
+the detection rules, so 100% precision measures internal consistency, not real-world
+performance — a rule and its test sharing an author share their blind spots too. The
+honest external number is the real-data recall (75%), measured on a deliberately small
+sample (n=4) of labelled EVTX captures. Real telemetry uses different event schemas
+(scheduled task = Security 4698, password spray = Kerberos 4771), and simple rules
+cannot catch every technique; the misses are documented as known gaps rather than
+tuned away.
+
+**The LLM is not trusted, and it earns that distrust.** Running the local model over
+the sample incidents, the validation layer routinely catches it filing a real
+technique under an invented tactic (`UNIX_SHells`, `command_and_script_interpreter`),
+leaving detected techniques unexplained, and rating an incident lower than the
+detectors did. None of that reaches the analyst unchallenged — which is the point of
+having a validation layer rather than a claim of zero hallucinations.
 
 ## Real data (EVTX)
 
@@ -160,6 +174,11 @@ Streamlit · EVTX parsing
 
 - No detector yet for WMI event-subscription persistence (T1546) or in-memory PowerShell
   whose payload isn't in the process command line — surfaced honestly by the evaluation.
-- Multi-host attack correlation, more real-world detectors, and a larger labeled eval set
-  are natural next steps.
+- Small local models follow the output schema unreliably. The validation layer catches
+  the errors, but report quality depends on the model: `qwen2.5-0.5b` is fast and
+  unusable here (ignores the schema), `qwen2.5-1.5b` is the working default.
+- The runtime cancels requests that take too long on CPU, so generation is capped and
+  the prompt asks for brevity. A faster machine would allow richer reports.
+- A larger labelled evaluation set, more real-world detectors, and analyst feedback
+  (marking false positives) are the natural next steps.
 
