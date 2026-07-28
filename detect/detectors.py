@@ -397,6 +397,43 @@ def detect_payload_upload(conn) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
+# ADVERSARIAL-INPUT detector: prompt injection aimed at the LLM analyst
+# This system feeds log content to a language model, which makes the log itself an
+# attack surface: whoever controls a command line or a URL can plant text designed to
+# manipulate the analysis. Escaping it in the prompt is the defence; flagging it here
+# turns the attempt into evidence, because a log that argues with its reader is
+# itself a strong indicator of compromise.
+# --------------------------------------------------------------------------- #
+_INJECTION_MARKERS = (
+    "ignore previous", "ignore all previous", "ignore the above", "disregard the above",
+    "system override", "new instructions", "you are now", "as an ai",
+    "this is a false positive", "no action required", "mark as benign",
+)
+
+
+@register_detector
+def detect_prompt_injection(conn) -> list[dict]:
+    """Log content crafted to manipulate an LLM analyst = adversarial evasion."""
+    rows = conn.execute(
+        "SELECT id, time, host, user, cmdline, message, url FROM events "
+        "WHERE cmdline IS NOT NULL OR message IS NOT NULL OR url IS NOT NULL"
+    ).fetchall()
+
+    signals = []
+    for r in rows:
+        blob = " ".join(x for x in (r["cmdline"], r["message"], r["url"]) if x).lower()
+        hit = next((m for m in _INJECTION_MARKERS if m in blob), None)
+        if hit:
+            signals.append(_signal(
+                "llm_prompt_injection", "T1027", "Obfuscated Files or Information",
+                "high", r,
+                f"Log content appears crafted to manipulate an LLM analyst "
+                f"(prompt injection, matched \"{hit}\") — {r['user']}@{r['host']}",
+            ))
+    return signals
+
+
+# --------------------------------------------------------------------------- #
 # Runner that executes all detectors
 # --------------------------------------------------------------------------- #
 from detect.registry import DetectorRegistry

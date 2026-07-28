@@ -14,6 +14,7 @@ import streamlit as st
 from ingest.ingest import ingest_events
 from detect.correlate import build_incidents
 from reason.analyst import analyze_incident
+from reason.context import build_context
 from validate.grounding import validate_report
 from common.db import get_connection
 from config import LOG_PATH, CHAT_MODEL
@@ -158,8 +159,11 @@ if run_btn:
                 
                 try:
                     with st.spinner(f"Vaka #{idx} ({incident['host']}) yapay zeka tarafından analiz ediliyor (Model yükleniyor olabilir)..."):
-                        report = analyze_incident(incident, alias=model)
-                        validation = validate_report(report, incident)
+                        # Same evidence text for analysis and validation, so grounding
+                        # checks what the model actually saw.
+                        context = build_context(incident)
+                        report = analyze_incident(incident, alias=model, context=context)
+                        validation = validate_report(report, incident, context=context)
                 except Exception as e:
                     if "cancelled" in str(e).lower():
                         st.error("⚠️ HATA: Sistem Belleği (RAM) Yetersiz veya İşlem İptal Edildi!")
@@ -172,7 +176,9 @@ if run_btn:
                 
                 # Render Incident Card
                 st.markdown(f'<div class="incident-card">', unsafe_allow_html=True)
-                icon = _SEV_COLOR.get(str(report.get("severity", sev)).lower(), "")
+                # Severity comes from the deterministic detectors, not the model —
+                # crafted log text must not be able to talk an incident down to "low".
+                icon = _SEV_COLOR.get(str(sev).lower(), "")
                 st.subheader(f"{icon} Vaka #{idx} — Hedef: {incident['host']}")
                 
                 c1, c2 = st.columns([3, 1])
@@ -198,7 +204,10 @@ if run_btn:
                         st.markdown(f"- {act}")
 
                 with c2:
-                    st.metric("Risk Seviyesi", str(report.get("severity", sev)).upper())
+                    st.metric("Risk Seviyesi", str(sev).upper())
+                    _model_sev = str(report.get("severity", "")).strip().lower()
+                    if _model_sev and _model_sev != str(sev).lower():
+                        st.caption(f"Model '{_model_sev}' önerdi; dedektör değeri geçerlidir.")
                     st.metric("Yapay Zeka Güven Skoru", f"{validation['trust_score'] * 100:.0f}%")
                     
                     if validation["grounded"]:

@@ -12,12 +12,18 @@ _SEV_ICON = {"low": "🟢", "medium": "🟡", "high": "🟠", "critical": "🔴"
 
 def render_report(incident: dict, report: dict, validation: dict) -> None:
     """Print the analysis + validation result for one incident."""
-    sev = str(report.get("severity", incident["severity"])).lower()
+    # Severity comes from the detectors, never from the model. Detection is
+    # deterministic; the model's rating is an opinion, and log text crafted by an
+    # attacker must not be able to talk a real incident down to "low".
+    sev = str(incident["severity"]).lower()
     icon = _SEV_ICON.get(sev, "⚪")
+    model_sev = str(report.get("severity", "")).strip().lower()
 
     print("=" * 70)
     print(f"{icon}  INCIDENT REPORT — {incident['host']}   [severity: {sev.upper()}]")
     print(f"    Time range: {incident['start']} -> {incident['end']}")
+    if model_sev and model_sev != sev:
+        print(f"    (model suggested '{model_sev}' — the detector rating stands)")
     print("=" * 70)
 
     # Summary

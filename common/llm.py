@@ -11,13 +11,21 @@ Note: the model runs entirely locally, on the CPU, with no internet.
 
 import sys
 import json
+import threading
 import common.console  # noqa: F401
 from foundry_local_sdk import Configuration, FoundryLocalManager
-from config import APP_NAME, CHAT_MODEL, EMBED_MODEL
+from config import APP_NAME, CHAT_MODEL, EMBED_MODEL, LLM_MAX_TOKENS, LLM_SEED
 
 # Caches so we don't rebuild clients on every call (alias -> client)
 _chat_clients: dict[str, object] = {}
 _embed_clients: dict[str, object] = {}
+
+# Foundry Local runs ONE model instance on the CPU, and a chat client carries mutable
+# per-call settings (temperature, response_format). Two callers at once therefore both
+# corrupt each other's settings and contend for the same runtime — which shows up as
+# "Operation was cancelled". Serializing model access here fixes it for every caller
+# (CLI, Streamlit, evaluation) rather than at one call site.
+_model_lock = threading.RLock()
 
 
 def _get_manager() -> FoundryLocalManager:
@@ -52,16 +60,18 @@ def _load_model(alias: str):
 
 def get_chat_client(alias: str = CHAT_MODEL):
     """Return a chat client for the model (downloads + loads on first call)."""
-    if alias not in _chat_clients:
-        _chat_clients[alias] = _load_model(alias).get_chat_client()
-    return _chat_clients[alias]
+    with _model_lock:  # without this, two threads can both start the same download
+        if alias not in _chat_clients:
+            _chat_clients[alias] = _load_model(alias).get_chat_client()
+        return _chat_clients[alias]
 
 
 def get_embedding_client(alias: str = EMBED_MODEL):
     """Return an embedding client for the model (downloads + loads on first call)."""
-    if alias not in _embed_clients:
-        _embed_clients[alias] = _load_model(alias).get_embedding_client()
-    return _embed_clients[alias]
+    with _model_lock:
+        if alias not in _embed_clients:
+            _embed_clients[alias] = _load_model(alias).get_embedding_client()
+        return _embed_clients[alias]
 
 
 def complete(system: str, user: str, alias: str = CHAT_MODEL, json_mode: bool = False) -> str:
@@ -70,19 +80,25 @@ def complete(system: str, user: str, alias: str = CHAT_MODEL, json_mode: bool = 
     If json_mode=True, ask the model for JSON output (on models that support it).
     """
     client = get_chat_client(alias)
-    client.settings.temperature = 0.2  # low temperature = more consistent, less made up
-
-    if json_mode:
-        try:
-            client.settings.response_format = {"type": "json_object"}
-        except Exception:
-            client.settings.response_format = None
-
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
-    response = client.complete_chat(messages=messages)
+
+    # Settings live on the shared client, so mutating them and calling must be one
+    # atomic step — otherwise a concurrent caller changes them mid-request.
+    with _model_lock:
+        client.settings.temperature = 0.2  # low temperature = consistent, less made up
+        client.settings.max_tokens = LLM_MAX_TOKENS  # stay inside the runtime's budget
+        client.settings.random_seed = LLM_SEED       # same input -> same report
+
+        if json_mode:
+            try:
+                client.settings.response_format = {"type": "json_object"}
+            except Exception:
+                client.settings.response_format = None
+
+        response = client.complete_chat(messages=messages)
     return response.choices[0].message.content
 
 

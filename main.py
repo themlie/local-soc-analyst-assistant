@@ -18,22 +18,29 @@ import common.console  # noqa: F401
 from ingest.ingest import ingest_file, ingest_events
 from detect.correlate import build_incidents
 from reason.analyst import analyze_incident
+from reason.context import build_context
 from validate.grounding import validate_report
 from ui.report import render_report
-from config import CHAT_MODEL
+from config import CHAT_MODEL, LLM_CONCURRENCY
 from common.logger import get_logger
 
 logger = get_logger()
 
 
-async def process_incident(incident, model):
-    try:
-        # LLM calls are synchronous in the SDK, so we run them in a separate thread
-        report = await asyncio.to_thread(analyze_incident, incident, alias=model)
-    except Exception as exc:
-        logger.error(f"Could not analyze incident on {incident['host']}", exc_info=True)
-        return
-    validation = validate_report(report, incident)
+async def process_incident(incident, model, limit):
+    # Build the evidence once and reuse it, so the validator checks the report against
+    # exactly the text the model was given rather than a rebuilt approximation.
+    context = build_context(incident)
+    async with limit:  # bound how many incidents may occupy the model at once
+        try:
+            # LLM calls are synchronous in the SDK, so we run them in a separate thread
+            report = await asyncio.to_thread(
+                analyze_incident, incident, alias=model, context=context
+            )
+        except Exception:
+            logger.error(f"Could not analyze incident on {incident['host']}", exc_info=True)
+            return
+    validation = validate_report(report, incident, context=context)
     render_report(incident, report, validation)
 
 async def async_run(model: str = CHAT_MODEL, evtx: str | None = None, file: str | None = None) -> None:
@@ -63,8 +70,10 @@ async def async_run(model: str = CHAT_MODEL, evtx: str | None = None, file: str 
         # 3) For each incident: LLM analysis + validation + report
         logger.info(f"[reason]    Loading model: {model} (may download on first run)...\n")
         
-        # Concurrently process all incidents
-        tasks = [process_incident(incident, model) for incident in incidents]
+        # Incidents are dispatched together, but LLM_CONCURRENCY decides how many may
+        # actually hold the model — with a single local model that is deliberately 1.
+        limit = asyncio.Semaphore(LLM_CONCURRENCY)
+        tasks = [process_incident(incident, model, limit) for incident in incidents]
         await asyncio.gather(*tasks)
     except Exception as e:
         logger.error("A fatal error occurred during the run", exc_info=True)

@@ -36,6 +36,28 @@ BRUTE_FORCE_WINDOW = timedelta(minutes=5)
 # The threshold is low because spraying uses few attempts against many accounts.
 KERBEROS_FAILURE_THRESHOLD = 2
 
+# --- LLM execution ---
+# Foundry Local serves a single model instance on the CPU, so analysing incidents in
+# parallel does not make them finish sooner — the requests contend and the runtime
+# starts cancelling them. Raise this only on a runtime that genuinely serves
+# concurrent requests.
+LLM_CONCURRENCY = 1
+
+# The local runtime cancels a request that takes too long to generate on CPU — it
+# surfaces as "Operation was cancelled". Capping the answer length keeps a report
+# inside that budget; raise it only if your machine generates faster.
+LLM_MAX_TOKENS = 700
+
+# A fixed seed makes the same incident produce the same report. A security finding
+# that changes between runs cannot be reviewed or audited.
+LLM_SEED = 42
+
+# --- Evidence package (LLM context) ---
+# Log fields are attacker-controlled and unbounded: a crafted command line could fill
+# the whole context window on its own. Clip each field and cap how many events go in.
+MAX_FIELD_CHARS = 300
+MAX_CONTEXT_EVENTS = 50
+
 # --- Correlation ---
 # Signals on the same host within this window are grouped into a single incident.
 CORRELATION_WINDOW = timedelta(minutes=15)

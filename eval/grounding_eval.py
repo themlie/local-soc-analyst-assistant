@@ -22,6 +22,7 @@ from config import ROOT, CHAT_MODEL
 from ingest.ingest import ingest_events, ingest_file
 from detect.correlate import build_incidents
 from reason.analyst import analyze_incident
+from reason.context import build_context
 from validate.grounding import validate_report
 
 GOLDEN_PATH = ROOT / "eval" / "golden.json"
@@ -50,8 +51,9 @@ def run(model: str = CHAT_MODEL, limit: int | None = None) -> None:
             continue
 
         evaluated += 1
-        report = analyze_incident(incidents[0], alias=model)
-        validation = validate_report(report, incidents[0])
+        context = build_context(incidents[0])
+        report = analyze_incident(incidents[0], alias=model, context=context)
+        validation = validate_report(report, incidents[0], context=context)
 
         parse_ok = not report.get("_parse_error")
         json_ok += int(parse_ok)
