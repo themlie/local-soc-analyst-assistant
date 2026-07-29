@@ -220,6 +220,26 @@ Python (`asyncio`) · Microsoft Foundry Local · on-device LLM & embeddings · S
 rule-based detection · evidence-package construction · grounding/validation ·
 Streamlit · EVTX parsing
 
+## ATT&CK Navigator layers
+
+```powershell
+python -m ui.navigator     # writes both layers; the web interface offers them as downloads
+```
+
+Open either file at [ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/)
+via *Open Existing Layer → Upload from local*.
+
+- **Detections** — the techniques an analysis actually triggered, scored by how many
+  signals support each one.
+- **Coverage** — which techniques the rule set can catch, and which it cannot: 13 of 15
+  catalogued techniques have a rule, and the two that do not (T1078 Valid Accounts,
+  T1546 Event Triggered Execution) are marked as gaps.
+
+The second layer is the more useful one. Publishing the blank squares next to the filled
+ones is how a detection capability is honestly described; a coverage map showing only
+strengths is marketing. A test asserts the published coverage equals what the detectors
+are actually tested to report, so the picture cannot drift from the rules.
+
 ## Security
 
 The logs this tool analyses are written by whoever ran the command — during an incident,

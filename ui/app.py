@@ -19,6 +19,7 @@ from reason.context import build_context
 from validate.grounding import validate_report
 from common.db import get_connection, use_session, purge_stale_sessions
 from ui.report import to_markdown
+from ui.navigator import detected_layer, coverage_layer, to_json
 from config import LOG_PATH, CHAT_MODEL
 
 st.set_page_config(page_title="SOC Analyst AI", layout="wide", initial_sidebar_state="collapsed")
@@ -291,6 +292,33 @@ if run_btn:
                     )
 
                 st.markdown('</div>', unsafe_allow_html=True)
+
+            # ATT&CK Navigator layers for the whole analysis. The coverage map is the
+            # more useful of the two: it shows what these rules cannot catch as well as
+            # what they can, in the notation a SOC already reads.
+            st.divider()
+            st.markdown("**MITRE ATT&CK Navigator katmanları**")
+            st.caption(
+                "İndirdiğin dosyayı https://mitre-attack.github.io/attack-navigator/ "
+                "adresinde 'Open Existing Layer → Upload from local' ile aç."
+            )
+            nav1, nav2 = st.columns(2)
+            with nav1:
+                st.download_button(
+                    "Bu analizde tespit edilenler",
+                    data=to_json(detected_layer(incidents)).encode("utf-8"),
+                    file_name="navigator-detections.json",
+                    mime="application/json", key="nav-detected",
+                    use_container_width=True,
+                )
+            with nav2:
+                st.download_button(
+                    "Tespit kapsamı (boşluklar dahil)",
+                    data=to_json(coverage_layer()).encode("utf-8"),
+                    file_name="navigator-coverage.json",
+                    mime="application/json", key="nav-coverage",
+                    use_container_width=True,
+                )
 
     with tab_raw:
         st.write("Veritabanına işlenmiş olan ham log verileri:")

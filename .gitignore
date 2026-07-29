@@ -26,3 +26,6 @@ test.json
 # Local baseline snapshot
 baseline.txt
 .pytest_cache/
+
+# Generated ATT&CK Navigator layers (see ui/navigator.py)
+navigator-*.json

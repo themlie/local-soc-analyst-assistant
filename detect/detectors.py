@@ -475,6 +475,30 @@ def detect_prompt_injection(conn) -> list[dict]:
 # --------------------------------------------------------------------------- #
 # Runner that executes all detectors
 # --------------------------------------------------------------------------- #
+
+# Every ATT&CK technique some rule above can report. Declared rather than inferred so
+# it can be published as a coverage map (see ui/navigator.py) — and kept honest by
+# tests/test_navigator.py, which fails if a detector emits something missing here.
+#
+# Techniques in common/attack.py that are absent from this set are gaps we know about
+# and have not closed, not oversights: T1546 (WMI event subscription) and T1078
+# (valid accounts) both need signals this pipeline does not yet ingest.
+COVERED_TECHNIQUES = {
+    "T1003.008",  # /etc/shadow credential access
+    "T1027",      # obfuscation, incl. prompt injection planted in logs
+    "T1048",      # exfiltration over netcat/curl
+    "T1053.005",  # scheduled task (Sysmon cmdline and Security 4698)
+    "T1059.001",  # obfuscated PowerShell
+    "T1059.004",  # unix shell abuse / reverse shells
+    "T1070.001",  # Windows event log cleared
+    "T1071",      # suspicious outbound connection (possible C2)
+    "T1105",      # ingress tool transfer, incl. web payload delivery
+    "T1110",      # brute force and Kerberos password spray
+    "T1190",      # exploit public-facing application
+    "T1562.001",  # impair defenses / AMSI bypass
+    "T1595",      # active scanning
+}
+
 from detect.registry import DetectorRegistry
 
 def run_all_detectors() -> list[dict]:
