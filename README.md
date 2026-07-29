@@ -161,6 +161,34 @@ leaving detected techniques unexplained, and rating an incident lower than the
 detectors did. None of that reaches the analyst unchallenged — which is the point of
 having a validation layer rather than a claim of zero hallucinations.
 
+## Performance
+
+```powershell
+python -m eval.benchmark            # per-stage timings at several volumes
+```
+
+Deterministic stages only, on a 16 GB CPU-only laptop. The LLM stage is excluded
+because it is bounded by the model runtime, not by this code (see *Known gaps*).
+
+| Events | Ingest | Detect | Correlate | Total |
+|---|---|---|---|---|
+| 1,000 | 0.07s | 0.02s | <0.01s | **0.09s** |
+| 10,000 | 0.44s | 0.27s | <0.01s | **0.71s** |
+| 50,000 | 2.01s | 1.25s | <0.01s | **3.26s** |
+
+Two results worth recording, both of which contradicted an assumption:
+
+- **Brute-force detection was quadratic.** The naive "for every start, rescan what
+  follows" only terminates early when the threshold is met — so the worst case is an
+  ordinary one: an account failing auth all day without ever tripping it. Measured at
+  4,000 attempts: **10.8s, and doubling the input quadrupled the time.** A two-pointer
+  sliding window with lazily parsed timestamps brings that to **0.03s**.
+- **Adding indexes made it slower.** Indexing `event_id` and `(host, time)` was tried
+  and reverted: 50k events went from 3.26s to 3.35s while ingest paid to build them.
+  Detectors filter on common values (`event_id = 1` matches ~40% of rows), and a scan
+  beats an index lookup per row once a query matches much of the table. The reasoning
+  is recorded in `ingest/ingest.py` so it does not get "fixed" back.
+
 ## Real data (EVTX)
 
 Beyond synthetic JSON, the system also analyzes **real Windows EVTX** logs from

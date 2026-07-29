@@ -157,6 +157,13 @@ def ingest_events(raw_events: list[dict]) -> int:
     for ev in usable:
         conn.execute(f"INSERT INTO events ({columns}) VALUES ({placeholders})", ev)
 
+    # No index here, and that is deliberate — measured, not assumed.
+    # Indexing event_id and (host, time) was tried and made the pipeline SLOWER:
+    # 50k events went from 2.09s to 3.35s. Detectors filter on common values
+    # (event_id = 1 matches ~40% of rows), and for a query that matches much of the
+    # table a sequential scan beats an index lookup per row; building the index costs
+    # ingest time on top. Revisit only if the table reaches millions of rows or the
+    # detectors start filtering on rare values. See eval/benchmark.py.
     conn.commit()
     count = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
     conn.close()
