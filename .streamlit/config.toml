@@ -1,2 +1,16 @@
+# Hardened defaults. SECURITY.md explains the reasoning behind each one.
+
 [browser]
+# Streamlit reports usage to a remote endpoint by default, which contradicts the
+# central promise that security telemetry never leaves the machine.
 gatherUsageStats = false
+
+[server]
+# Loopback only. Streamlit's default is every interface, so this interface — which has
+# no authentication and handles uploaded security logs — was reachable from the local
+# network. Change this only when running behind something that authenticates.
+address = "localhost"
+
+# Uploads are parsed into memory. The 200 MB default is far more than a JSON log
+# export needs, and makes exhausting memory trivial.
+maxUploadSize = 25

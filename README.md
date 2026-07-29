@@ -220,6 +220,14 @@ Python (`asyncio`) · Microsoft Foundry Local · on-device LLM & embeddings · S
 rule-based detection · evidence-package construction · grounding/validation ·
 Streamlit · EVTX parsing
 
+## Security
+
+The logs this tool analyses are written by whoever ran the command — during an incident,
+the attacker. [SECURITY.md](SECURITY.md) documents the trust boundaries that follow from
+that, the layered defence against prompt injection, why the model is never allowed to set
+severity, how sessions are isolated, and the limitations that are accepted rather than
+hidden (no authentication, no encryption at rest, evadable keyword rules).
+
 ## Known gaps / future work
 
 - No detector yet for WMI event-subscription persistence (T1546) or in-memory PowerShell
