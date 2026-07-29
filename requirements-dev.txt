@@ -1,0 +1,10 @@
+# Development dependencies: everything in requirements.txt, plus tooling.
+#
+# CI does not use this file. The ingest, detection, correlation and validation layers
+# are pure standard library, so continuous integration installs pytest alone and skips
+# the model runtime entirely — see .github/workflows/ci.yml.
+
+-r requirements.txt
+
+pytest==9.1.1              # test suite (tests/)
+numpy==2.5.0               # optional experiment (experiments/attack_semantic_search.py)

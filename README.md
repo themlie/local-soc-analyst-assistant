@@ -84,9 +84,14 @@ Raw logs
 ```powershell
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-winget install Microsoft.FoundryLocal   # local model runtime
+pip install -r requirements.txt          # to run it
+pip install -r requirements-dev.txt      # to run the tests as well
+winget install Microsoft.FoundryLocal    # local model runtime
 ```
+
+`requirements.txt` declares only the three packages the project imports directly; pip
+resolves the rest. Pins are exact, because an unreviewed dependency upgrade is still an
+unreviewed change.
 
 ## Usage
 
