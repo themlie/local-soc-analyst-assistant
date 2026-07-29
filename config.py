@@ -19,6 +19,30 @@ DB_PATH = DATA_DIR / "soc.db"
 # telemetry, so they are swept rather than kept indefinitely.
 SESSION_DIR = DATA_DIR / "sessions"
 SESSION_TTL_SECONDS = 24 * 60 * 60
+
+# --- Knowledge base (RAG) ---
+# Runbooks and policy the assistant answers questions from. Unlike uploaded logs this
+# is shared reference material, so it lives in its own database and is never scoped to
+# a session or rebuilt by log ingest.
+KB_DIR = ROOT / "kb"
+KB_DB_PATH = DATA_DIR / "kb.db"
+
+# Chunking. Passages of roughly a few paragraphs retrieve better than whole documents:
+# a document is too coarse to be a precise answer, a sentence too small to carry
+# context. One paragraph of overlap keeps an idea that straddles a boundary findable.
+CHUNK_MAX_CHARS = 900
+CHUNK_OVERLAP_PARAGRAPHS = 1
+
+# How many passages are retrieved for a question, and how similar a passage must be to
+# count at all. Below the floor the assistant says it does not know rather than
+# answering from the nearest-but-irrelevant text.
+RAG_TOP_K = 3
+RAG_MIN_SIMILARITY = 0.35
+
+# Passages embedded per request. The local runtime cancels a request that takes too
+# long, and the whole knowledge base in one call exceeds that budget on CPU. Small
+# batches also give the indexer something to report progress with.
+EMBED_BATCH_SIZE = 5
 LOG_PATH = DATA_DIR / "sample_logs.json"
 
 # --- Foundry Local model selection ---

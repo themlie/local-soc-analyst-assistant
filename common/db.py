@@ -25,7 +25,7 @@ import threading
 import time
 from pathlib import Path
 
-from config import DB_PATH, SESSION_DIR, SESSION_TTL_SECONDS
+from config import DB_PATH, KB_DB_PATH, SESSION_DIR, SESSION_TTL_SECONDS
 
 # Streamlit runs each user's script in its own thread, so the active session must be
 # thread-local; a module-level global would have one user's upload redirect another's.
@@ -60,6 +60,19 @@ def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(current_db_path())
     # row_factory lets us access results by column name (r["user"]) instead of
     # index numbers — far more readable code.
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def get_kb_connection() -> sqlite3.Connection:
+    """Connection to the knowledge base, which is shared and outlives any session.
+
+    Deliberately separate from the events database: log ingest rebuilds its table on
+    every run and is scoped per session, while runbooks are reference material that
+    every session reads and nobody uploads.
+    """
+    KB_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(KB_DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 

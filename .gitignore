@@ -29,3 +29,6 @@ baseline.txt
 
 # Generated ATT&CK Navigator layers (see ui/navigator.py)
 navigator-*.json
+
+# Knowledge base index (rebuild with: python -m rag.index)
+data/kb.db

@@ -26,8 +26,10 @@ jobs:
       # deliberately does not install the on-device model runtime: it would add
       # minutes and a platform dependency without exercising a line these tests reach.
       # Anything that needs a model is measured locally (see eval/grounding_eval.py).
+      # numpy is needed because retrieval computes vector similarity; the model
+      # runtime still is not, since chunking and the refusal path never load a model.
       - name: Install test dependencies
-        run: python -m pip install --quiet pytest
+        run: python -m pip install --quiet pytest numpy
 
       - name: Regression tests
         run: python -m pytest tests/ -q

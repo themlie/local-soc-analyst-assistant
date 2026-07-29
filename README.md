@@ -17,7 +17,12 @@ to the cloud.
 > Built as a one-month learning project around Microsoft Foundry Local. It runs on CPU,
 > with no cloud account and no GPU required.
 
-**Positioning:** This is a *detection engineering + LLM-assisted triage* system, not a document-RAG application. Detection is deterministic and rule-based by design; the local LLM explains and correlates findings but never decides whether something is malicious.
+**Positioning:** The tool covers both halves of an analyst's job. *"What happened?"* is
+answered by deterministic, rule-based detection — the local LLM explains and correlates
+findings but never decides whether something is malicious. *"What do I do about it?"* is
+answered by **retrieval-augmented generation** over the team's own runbooks: passages are
+retrieved from a local vector index and the model answers from those alone, citing the
+document, or says the knowledge base does not cover the question.
 
 ## Why this matters
 
@@ -52,6 +57,22 @@ Raw logs
 [ui/main]   → present the result as a readable incident report
 ```
 
+Alongside it, the retrieval path that answers questions from the runbooks:
+
+```
+kb/*.md
+   │
+   ▼
+[rag/index]  → split into passages → embed each one → store vectors in SQLite
+   │
+   ▼
+[rag/search] → embed the question → cosine similarity → top-K passages
+   │            (below the similarity floor: return nothing)
+   ▼
+[rag/answer] → answer from those passages only, with citations — or say
+               "the knowledge base does not cover this"
+```
+
 ## File guide
 
 | File | Purpose |
@@ -68,6 +89,10 @@ Raw logs
 | `detect/detectors.py` | Rule-based detectors across Windows, Linux and web sources (brute force, PowerShell, C2, scheduled task, reverse shell, credential dumping, exfiltration, SQLi/exploit, ...) |
 | `detect/correlate.py` | Groups signals into per-host incidents, then links incidents across hosts into campaigns |
 | `common/timeutil.py` | Normalizes every log timestamp to timezone-aware UTC |
+| `kb/` | The knowledge base: runbooks, escalation policy, ATT&CK reference |
+| `rag/index.py` | Chunks documents, embeds passages, stores them in SQLite |
+| `rag/search.py` | Embeds a question and retrieves the closest passages (cosine, top-K) |
+| `rag/answer.py` | Answers from retrieved passages with citations, or refuses |
 | `reason/context.py` | Builds the evidence package for the LLM |
 | `reason/analyst.py` | Produces a structured analysis with the local LLM |
 | `validate/grounding.py` | Hallucination shield: validates claims against evidence |
@@ -219,6 +244,45 @@ This project was recently refactored to include production-ready architecture:
 Python (`asyncio`) · Microsoft Foundry Local · on-device LLM & embeddings · SQLite · MITRE ATT&CK ·
 rule-based detection · evidence-package construction · grounding/validation ·
 Streamlit · EVTX parsing
+
+## Knowledge base Q&A (RAG)
+
+Log analysis says what happened. This says what to do about it, from the runbooks in
+`kb/` rather than from the model's memory.
+
+```powershell
+python -m rag.index                                    # chunk, embed, store in SQLite
+python -m rag.answer "What if the Security log was cleared?"
+python -m rag.search "password spray"                  # retrieval only, no generation
+```
+
+**How it works.** Each document is split into passages of a few paragraphs, kept within
+a heading so a passage answers one thing; consecutive passages overlap by a paragraph so
+an idea that straddles a boundary stays findable. Every passage is embedded by the local
+embedding model and stored with its vector in `data/kb.db` — separate from the events
+database, because runbooks are shared reference material while uploaded logs are
+per-session. A question is embedded by the *same* model and compared by cosine
+similarity; the closest passages become the prompt.
+
+**Two behaviours matter more than fluency.** Similarity has a floor: nearest is not the
+same as relevant, so when nothing clears it the model is never asked and the assistant
+answers *"The knowledge base does not cover this."* And every answer carries the
+passages behind it, so a reader can check it rather than trust it.
+
+```
+Q: Who decides incident severity?
+   [0.80] escalation-policy.md — Who decides severity
+Q: What is the best pizza topping?
+   → nothing above the floor: "The knowledge base does not cover this."
+```
+
+**Where it connects to detection.** An incident report's recommended actions are the
+model's suggestion, and generic advice at best. Alongside them the interface shows the
+runbook passages retrieved for the *detected* techniques — driven by the deterministic
+layer, not by the model's wording — so the procedure an analyst follows is the
+documented one, with the document named.
+
+Replace the contents of `kb/` with your own documents and re-run `python -m rag.index`.
 
 ## ATT&CK Navigator layers
 

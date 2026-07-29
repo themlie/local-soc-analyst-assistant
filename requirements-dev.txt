@@ -7,4 +7,3 @@
 -r requirements.txt
 
 pytest==9.1.1              # test suite (tests/)
-numpy==2.5.0               # optional experiment (experiments/attack_semantic_search.py)

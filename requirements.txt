@@ -10,6 +10,4 @@
 foundry-local-sdk==1.2.3   # on-device LLM and embedding runtime (common/llm.py)
 evtx==0.12.1               # real Windows EVTX parsing (ingest/win_evtx.py)
 streamlit==1.58.0          # web interface (ui/app.py)
-
-# Not required by the pipeline: numpy is used only by the optional experiment in
-# experiments/attack_semantic_search.py. Install it from requirements-dev.txt.
+numpy==2.5.0               # vector similarity for knowledge-base retrieval (rag/search.py)

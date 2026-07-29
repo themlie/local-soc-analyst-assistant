@@ -20,6 +20,8 @@ from validate.grounding import validate_report
 from common.db import get_connection, use_session, purge_stale_sessions
 from ui.report import to_markdown
 from ui.navigator import detected_layer, coverage_layer, to_json
+from rag.answer import answer_question, runbook_for_incident
+from rag.index import index_stats
 from config import LOG_PATH, CHAT_MODEL
 
 st.set_page_config(page_title="SOC Analyst AI", layout="wide", initial_sidebar_state="collapsed")
@@ -245,9 +247,22 @@ if run_btn:
                         else:
                             st.markdown(f"- {step}")
                             
-                    st.markdown("**Önerilen Aksiyonlar:**")
+                    st.markdown("**Önerilen Aksiyonlar (model önerisi):**")
                     for act in report.get("recommended_actions", []) or []:
                         st.markdown(f"- {act}")
+
+                    # Retrieved from the team's runbooks using the DETECTED techniques,
+                    # so the procedure an analyst follows is the documented one rather
+                    # than whatever the model recalls.
+                    try:
+                        _runbook = runbook_for_incident(incident)
+                    except Exception:
+                        _runbook = []
+                    if _runbook:
+                        st.markdown("**Runbook prosedürü (bilgi tabanından getirildi):**")
+                        for p in _runbook:
+                            with st.expander(f"📘 {p['source']} — {p['heading']}  ·  benzerlik {p['similarity']}"):
+                                st.write(p["content"])
 
                 with c2:
                     st.metric("Risk Seviyesi", str(sev).upper())
@@ -336,3 +351,62 @@ if run_btn:
         st.dataframe(data, use_container_width=True)
 else:
     st.info("Lütfen yukarıdan log dosyanızı seçin (veya boş bırakın) ve 'Analizi Başlat' butonuna tıklayın.")
+
+
+# --------------------------------------------------------------------------- #
+# Knowledge base Q&A (RAG)
+#
+# The other half of an analyst's job. Log analysis answers "what happened"; this
+# answers "what do I do about it" from the team's own runbooks — retrieved, not
+# recalled, so every answer carries the document it came from.
+# --------------------------------------------------------------------------- #
+st.divider()
+st.subheader("2. Bilgi Tabanına Soru Sor")
+
+_stats = index_stats()
+if not _stats["total"]:
+    st.warning(
+        "Bilgi tabanı henüz indekslenmemiş. Terminalde `python -m rag.index` çalıştır "
+        "(runbook'ları chunk'lara böler, embedding'lerini üretir ve SQLite'a yazar)."
+    )
+else:
+    st.caption(
+        f"{_stats['total']} passage · {len(_stats['by_source'])} doküman · "
+        f"kaynak: {', '.join(_stats['by_source'])}"
+    )
+
+    question = st.text_input(
+        "Sorunuz",
+        placeholder="Örn: Security event log temizlenmişse ne yapmalıyım?",
+        key="kb_question",
+    )
+    ask = st.button("Sor", type="secondary", key="kb_ask")
+
+    if ask and question.strip():
+        kb_live = st.empty()
+        kb_last = [0.0]
+
+        def kb_progress(text_so_far: str) -> None:
+            now = time.monotonic()
+            if now - kb_last[0] >= 0.4:
+                kb_last[0] = now
+                kb_live.caption(f"✍️ Model yazıyor… {len(text_so_far)} karakter")
+
+        with st.spinner("Bilgi tabanı aranıyor, ardından cevap üretiliyor…"):
+            result = answer_question(question, alias=model, on_chunk=kb_progress)
+        kb_live.empty()
+
+        if not result["passages"]:
+            # Retrieval found nothing above the similarity floor, so the model was
+            # never asked. Saying "I don't know" is the correct answer here.
+            st.info(f"**{result['answer']}**\n\nBu soru runbook'larda geçmiyor.")
+        else:
+            if result["answered"]:
+                st.markdown(f"**Cevap:** {result['answer']}")
+            else:
+                st.warning(result["answer"])
+
+            st.markdown("**Kaynaklar** (cevabın dayandığı pasajlar):")
+            for p in result["passages"]:
+                with st.expander(f"{p['source']} — {p['heading']}  ·  benzerlik {p['similarity']}"):
+                    st.write(p["content"])
