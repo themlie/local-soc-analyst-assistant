@@ -13,6 +13,12 @@ from datetime import timedelta
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
 DB_PATH = DATA_DIR / "soc.db"
+
+# Per-session databases for the web interface, so concurrent users cannot overwrite
+# or read each other's uploaded logs (see common/db.py). They hold real security
+# telemetry, so they are swept rather than kept indefinitely.
+SESSION_DIR = DATA_DIR / "sessions"
+SESSION_TTL_SECONDS = 24 * 60 * 60
 LOG_PATH = DATA_DIR / "sample_logs.json"
 
 # --- Foundry Local model selection ---

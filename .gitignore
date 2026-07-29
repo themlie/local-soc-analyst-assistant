@@ -5,6 +5,7 @@ __pycache__/
 
 # Local database and large/binary data
 data/*.db
+data/sessions/
 
 # Real EVTX samples (auto-downloaded by eval/real_eval.py)
 data/real/

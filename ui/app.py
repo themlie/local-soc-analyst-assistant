@@ -16,10 +16,22 @@ from detect.correlate import build_incidents
 from reason.analyst import analyze_incident
 from reason.context import build_context
 from validate.grounding import validate_report
-from common.db import get_connection
+from common.db import get_connection, use_session, purge_stale_sessions
 from config import LOG_PATH, CHAT_MODEL
 
 st.set_page_config(page_title="SOC Analyst AI", layout="wide", initial_sidebar_state="collapsed")
+
+# Give this browser session its own database before anything reads or writes one.
+# Ingest rebuilds the events table, so without this a second analyst uploading logs
+# would wipe the first one's evidence — and then read results built from it.
+# Streamlit reruns this script on every interaction, so the id is kept in session
+# state and the binding is re-applied each run (it is thread-local, and reruns may
+# land on a different worker thread).
+if "session_id" not in st.session_state:
+    import uuid
+    st.session_state.session_id = uuid.uuid4().hex
+    purge_stale_sessions()  # uploaded logs are sensitive; don't keep them forever
+use_session(st.session_state.session_id)
 
 # Custom CSS for UI/UX improvements (focusing on cards, buttons, and readable inputs)
 st.markdown("""
