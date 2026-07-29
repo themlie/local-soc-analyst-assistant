@@ -5,6 +5,7 @@ ui/app.py — Streamlit web interface (clickable demo).
 import json
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 # When the Streamlit script runs directly, add the project root to the import path
@@ -22,7 +23,7 @@ from ui.report import to_markdown
 from ui.navigator import detected_layer, coverage_layer, to_json
 from rag.answer import answer_question, runbook_for_incident
 from rag.index import index_stats
-from config import LOG_PATH, CHAT_MODEL
+from config import LOG_PATH, DEMO_LOG_PATH, CHAT_MODEL
 
 st.set_page_config(page_title="SOC Analyst AI", layout="wide", initial_sidebar_state="collapsed")
 
@@ -115,6 +116,58 @@ st.markdown("""
 
 _SEV_COLOR = {"low": "[LOW]", "medium": "[MEDIUM]", "high": "[HIGH]", "critical": "[CRITICAL]"}
 
+
+def run_with_live_view(fn, *args, **kwargs):
+    """Run a model call in a worker thread while the main thread shows what it is doing.
+
+    Calling the model directly would block this script, and nothing could be drawn
+    until it returned — which is why the first ~30 seconds used to look like a freeze:
+    the model reads the evidence before emitting a single token, so no streaming
+    callback fires during it. Running the call in a worker lets this thread keep
+    painting: an elapsed-time counter proves it is alive during that silent phase, and
+    the generated text is shown as it arrives during the rest.
+
+    The worker re-binds the session database, because that binding is thread-local and
+    a worker without it would read the shared default instead of this user's uploads.
+    """
+    session_id = st.session_state.get("session_id")
+    stream = {"text": ""}
+
+    def on_chunk(text_so_far: str) -> None:
+        stream["text"] = text_so_far          # worker thread: never touch Streamlit here
+
+    def work():
+        use_session(session_id)
+        return fn(*args, on_chunk=on_chunk, **kwargs)
+
+    box = st.empty()
+    started = time.monotonic()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(work)
+        while not future.done():
+            _paint_live(box, stream["text"], time.monotonic() - started)
+            time.sleep(0.25)
+        _paint_live(box, stream["text"], time.monotonic() - started)
+        result = future.result()             # re-raises worker exceptions to the caller
+    box.empty()
+    return result
+
+
+def _paint_live(box, text: str, elapsed: float) -> None:
+    """Draw the current phase, prominently enough to read from across a room."""
+    with box.container():
+        if not text:
+            st.markdown(f"## ⏳ Model kanıtı okuyor…  `{elapsed:0.0f} sn`")
+            st.info(
+                "Model önce tüm kanıt paketini işliyor. Bu aşamada **çıktı üretilmez** — "
+                "ekranda metin görünmemesi normaldir. CPU'da yaklaşık 30 saniye sürer, "
+                "model ilk kez yükleniyorsa daha uzun."
+            )
+        else:
+            st.markdown(f"## ✍️ Model yazıyor…  `{elapsed:0.0f} sn` · `{len(text)} karakter`")
+            st.caption("Modelin ürettiği ham çıktı (canlı):")
+            st.code(text[-1500:], language="json")
+
 # --- Main Header ---
 col1, col2 = st.columns([3, 1])
 with col1:
@@ -140,10 +193,25 @@ with col_model:
         help="Kullanılacak yerel Foundry Local modelini seçin (İlk çalıştırmada otomatik indirilir)"
     )
 
+_DATASETS = {
+    "Hızlı örnek — 1 vaka (~1 dk)": LOG_PATH,
+    "Tam senaryo — 2 vaka, kampanya + prompt injection (~2 dk)": DEMO_LOG_PATH,
+}
+
+with col_upload:
+    dataset = st.radio(
+        "Dosya yüklemezsen hangi örnek kullanılsın?",
+        options=list(_DATASETS),
+        index=1,
+        horizontal=False,
+        help="Her vakanın analizi CPU'da yaklaşık bir dakika sürer.",
+    )
+
+
 def load_logs() -> list[dict]:
     if uploaded is not None:
         return json.loads(uploaded.getvalue().decode("utf-8"))
-    return json.loads(LOG_PATH.read_text(encoding="utf-8"))
+    return json.loads(_DATASETS[dataset].read_text(encoding="utf-8"))
 
 with col_btn:
     st.write("") # Spacing
@@ -175,36 +243,13 @@ if run_btn:
                 sev = incident["severity"]
                 
                 try:
-                    live = st.empty()
-                    # Generation takes the better part of a minute per incident on CPU.
-                    # A spinner alone looks identical to a hang, so show the answer
-                    # growing. Streamlit redraws on every update, so throttle rather
-                    # than repaint on each token.
-                    last_paint = [0.0]
-
-                    def show_progress(text_so_far: str) -> None:
-                        now = time.monotonic()
-                        if now - last_paint[0] < 0.4:
-                            return
-                        last_paint[0] = now
-                        live.caption(f"✍️ Model yazıyor… {len(text_so_far)} karakter")
-
-                    # Measured on this machine: the model spends ~35s reading the
-                    # evidence before it emits a single token, and no callback can fire
-                    # during that. Saying so up front is the actual cure for "is it
-                    # stuck?" — the streaming counter only covers the tail.
-                    with st.spinner(
-                        f"Vaka #{idx}/{len(incidents)} ({incident['host']}) analiz ediliyor — "
-                        f"model önce kanıtı okur (~30 sn, çıktı görünmez), sonra raporu yazar. "
-                        f"Model ilk kez yükleniyorsa daha uzun sürebilir."
-                    ):
-                        # Same evidence text for analysis and validation, so grounding
-                        # checks what the model actually saw.
-                        context = build_context(incident)
-                        report = analyze_incident(incident, alias=model, context=context,
-                                                  on_chunk=show_progress)
-                        validation = validate_report(report, incident, context=context)
-                    live.empty()
+                    st.markdown(f"**Vaka #{idx}/{len(incidents)} — {incident['host']}**")
+                    # Same evidence text for analysis and validation, so grounding
+                    # checks what the model actually saw.
+                    context = build_context(incident)
+                    report = run_with_live_view(analyze_incident, incident,
+                                                alias=model, context=context)
+                    validation = validate_report(report, incident, context=context)
                 except Exception as e:
                     if "cancelled" in str(e).lower():
                         st.error("⚠️ HATA: Sistem Belleği (RAM) Yetersiz veya İşlem İptal Edildi!")
@@ -383,18 +428,7 @@ else:
     ask = st.button("Sor", type="secondary", key="kb_ask")
 
     if ask and question.strip():
-        kb_live = st.empty()
-        kb_last = [0.0]
-
-        def kb_progress(text_so_far: str) -> None:
-            now = time.monotonic()
-            if now - kb_last[0] >= 0.4:
-                kb_last[0] = now
-                kb_live.caption(f"✍️ Model yazıyor… {len(text_so_far)} karakter")
-
-        with st.spinner("Bilgi tabanı aranıyor, ardından cevap üretiliyor…"):
-            result = answer_question(question, alias=model, on_chunk=kb_progress)
-        kb_live.empty()
+        result = run_with_live_view(answer_question, question, alias=model)
 
         if not result["passages"]:
             # Retrieval found nothing above the similarity floor, so the model was

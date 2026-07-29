@@ -45,6 +45,11 @@ RAG_MIN_SIMILARITY = 0.35
 EMBED_BATCH_SIZE = 5
 LOG_PATH = DATA_DIR / "sample_logs.json"
 
+# A richer sample for demonstrations: two hosts linked into one campaign, ten
+# techniques including a prompt-injection attempt planted in a command line, and a
+# third host whose ordinary activity must produce no alerts at all.
+DEMO_LOG_PATH = DATA_DIR / "demo_logs.json"
+
 # --- Foundry Local model selection ---
 # Application name (tells the SDK where to store data; no spaces/special chars).
 APP_NAME = "soc-assistant"
