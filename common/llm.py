@@ -74,32 +74,69 @@ def get_embedding_client(alias: str = EMBED_MODEL):
         return _embed_clients[alias]
 
 
+def _messages(system: str, user: str) -> list[dict]:
+    return [{"role": "system", "content": system},
+            {"role": "user", "content": user}]
+
+
+def _apply_settings(client, json_mode: bool) -> None:
+    """Set generation options. Call with `_model_lock` held: the client is shared, so
+    changing settings and issuing the request must not be interleaved."""
+    client.settings.temperature = 0.2            # consistent, less made up
+    client.settings.max_tokens = LLM_MAX_TOKENS  # stay inside the runtime's budget
+    client.settings.random_seed = LLM_SEED       # same input -> same report
+    if json_mode:
+        try:
+            client.settings.response_format = {"type": "json_object"}
+        except Exception:
+            client.settings.response_format = None
+
+
 def complete(system: str, user: str, alias: str = CHAT_MODEL, json_mode: bool = False) -> str:
     """Send a system + user message to the model and return the raw text response.
 
     If json_mode=True, ask the model for JSON output (on models that support it).
     """
     client = get_chat_client(alias)
-    messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
-    ]
+    messages = _messages(system, user)
 
     # Settings live on the shared client, so mutating them and calling must be one
     # atomic step — otherwise a concurrent caller changes them mid-request.
     with _model_lock:
-        client.settings.temperature = 0.2  # low temperature = consistent, less made up
-        client.settings.max_tokens = LLM_MAX_TOKENS  # stay inside the runtime's budget
-        client.settings.random_seed = LLM_SEED       # same input -> same report
-
-        if json_mode:
-            try:
-                client.settings.response_format = {"type": "json_object"}
-            except Exception:
-                client.settings.response_format = None
-
+        _apply_settings(client, json_mode)
         response = client.complete_chat(messages=messages)
     return response.choices[0].message.content
+
+
+def complete_streamed(system: str, user: str, alias: str = CHAT_MODEL,
+                      json_mode: bool = False, on_chunk=None) -> str:
+    """Same as `complete`, but hand text to `on_chunk` as the model produces it.
+
+    Generating a report takes the better part of a minute on CPU. Without any sign of
+    progress that is indistinguishable from a hang, and the honest question — "is it
+    stuck?" — is one this project has already prompted. `on_chunk` receives the text
+    accumulated so far, so a caller can show that something is happening.
+
+    The full response is still returned, so callers parse the same JSON either way.
+    """
+    client = get_chat_client(alias)
+    messages = _messages(system, user)
+
+    parts: list[str] = []
+    with _model_lock:
+        _apply_settings(client, json_mode)
+        for chunk in client.complete_streaming_chat(messages=messages):
+            # The stream ends with a chunk that carries usage data and no choices,
+            # so indexing into choices unguarded raises IndexError on the last one.
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta.content
+            if not delta:
+                continue
+            parts.append(delta)
+            if on_chunk:
+                on_chunk("".join(parts))
+    return "".join(parts)
 
 
 def parse_json(text: str) -> dict:

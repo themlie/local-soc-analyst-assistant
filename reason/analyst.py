@@ -17,7 +17,7 @@ ONLY on the given evidence and to invent nothing. (If it does, the next layer,
 
 import time
 import common.console  # noqa: F401
-from common.llm import complete, parse_json
+from common.llm import complete, complete_streamed, parse_json
 from reason.context import build_context
 
 # Retrying a programming error just burns a second model call and hides the bug.
@@ -65,7 +65,7 @@ Respond with ONLY the following JSON schema, and no other text:
 
 
 def analyze_incident(incident: dict, alias: str | None = None, retries: int = 1,
-                     context: str | None = None) -> dict:
+                     context: str | None = None, on_chunk=None) -> dict:
     """Analyze an incident with the on-device LLM and return a report dict.
 
     `context` lets the caller pass in the evidence package it already built, so the
@@ -83,7 +83,11 @@ def analyze_incident(incident: dict, alias: str | None = None, retries: int = 1,
     last_exc = None
     for attempt in range(retries + 1):
         try:
-            raw = complete(SYSTEM_PROMPT, context, **kwargs)
+            # Streaming only changes how the answer arrives, not what it is: the
+            # caller supplies on_chunk purely to show progress during a long
+            # generation, and the parsed result is identical either way.
+            raw = (complete_streamed(SYSTEM_PROMPT, context, on_chunk=on_chunk, **kwargs)
+                   if on_chunk else complete(SYSTEM_PROMPT, context, **kwargs))
             return parse_json(raw)
         except _NON_RETRYABLE:
             raise  # our own bug — retrying only hides it

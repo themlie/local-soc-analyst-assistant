@@ -4,6 +4,7 @@ ui/app.py — Streamlit web interface (clickable demo).
 
 import json
 import sys
+import time
 from pathlib import Path
 
 # When the Streamlit script runs directly, add the project root to the import path
@@ -17,6 +18,7 @@ from reason.analyst import analyze_incident
 from reason.context import build_context
 from validate.grounding import validate_report
 from common.db import get_connection, use_session, purge_stale_sessions
+from ui.report import to_markdown
 from config import LOG_PATH, CHAT_MODEL
 
 st.set_page_config(page_title="SOC Analyst AI", layout="wide", initial_sidebar_state="collapsed")
@@ -170,12 +172,36 @@ if run_btn:
                 sev = incident["severity"]
                 
                 try:
-                    with st.spinner(f"Vaka #{idx} ({incident['host']}) yapay zeka tarafından analiz ediliyor (Model yükleniyor olabilir)..."):
+                    live = st.empty()
+                    # Generation takes the better part of a minute per incident on CPU.
+                    # A spinner alone looks identical to a hang, so show the answer
+                    # growing. Streamlit redraws on every update, so throttle rather
+                    # than repaint on each token.
+                    last_paint = [0.0]
+
+                    def show_progress(text_so_far: str) -> None:
+                        now = time.monotonic()
+                        if now - last_paint[0] < 0.4:
+                            return
+                        last_paint[0] = now
+                        live.caption(f"✍️ Model yazıyor… {len(text_so_far)} karakter")
+
+                    # Measured on this machine: the model spends ~35s reading the
+                    # evidence before it emits a single token, and no callback can fire
+                    # during that. Saying so up front is the actual cure for "is it
+                    # stuck?" — the streaming counter only covers the tail.
+                    with st.spinner(
+                        f"Vaka #{idx}/{len(incidents)} ({incident['host']}) analiz ediliyor — "
+                        f"model önce kanıtı okur (~30 sn, çıktı görünmez), sonra raporu yazar. "
+                        f"Model ilk kez yükleniyorsa daha uzun sürebilir."
+                    ):
                         # Same evidence text for analysis and validation, so grounding
                         # checks what the model actually saw.
                         context = build_context(incident)
-                        report = analyze_incident(incident, alias=model, context=context)
+                        report = analyze_incident(incident, alias=model, context=context,
+                                                  on_chunk=show_progress)
                         validation = validate_report(report, incident, context=context)
+                    live.empty()
                 except Exception as e:
                     if "cancelled" in str(e).lower():
                         st.error("⚠️ HATA: Sistem Belleği (RAM) Yetersiz veya İşlem İptal Edildi!")
@@ -238,7 +264,32 @@ if run_btn:
                         with st.expander("Gözlemler / Uyarılar"):
                             for w in validation["warnings"]:
                                 st.caption(f"• {w}")
-                                
+
+                    # A finding is only useful if it can leave the tool — pasted into a
+                    # ticket or attached to a handover. Event ids travel with it, so the
+                    # recipient can trace every claim back to a log line.
+                    st.download_button(
+                        "Raporu indir (Markdown)",
+                        data=to_markdown(incident, report, validation).encode("utf-8"),
+                        file_name=f"incident-{idx}-{incident['host']}.md",
+                        mime="text/markdown",
+                        key=f"md-{idx}",
+                        use_container_width=True,
+                    )
+                    st.download_button(
+                        "Kanıt paketi (JSON)",
+                        data=json.dumps(
+                            {"incident": {k: v for k, v in incident.items() if k != "signals"},
+                             "signals": incident["signals"],
+                             "report": report,
+                             "validation": validation},
+                            ensure_ascii=False, indent=2, default=str).encode("utf-8"),
+                        file_name=f"incident-{idx}-{incident['host']}.json",
+                        mime="application/json",
+                        key=f"json-{idx}",
+                        use_container_width=True,
+                    )
+
                 st.markdown('</div>', unsafe_allow_html=True)
 
     with tab_raw:
