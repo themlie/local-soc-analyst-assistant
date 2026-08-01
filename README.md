@@ -2,107 +2,49 @@
 
 [![CI](https://github.com/themlie/local-soc-analyst-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/themlie/local-soc-analyst-assistant/actions/workflows/ci.yml)
 
-An AI-powered SOC (Security Operations Center) analyst assistant that analyzes security
-logs **fully offline**. It ingests raw Windows/Sysmon logs, flags suspicious activity
-with rule-based detectors, correlates them into an attack chain, and uses a **local LLM
-(Microsoft Foundry Local)** to produce a timeline, **MITRE ATT&CK** mapping, and severity
-scoring. A validation layer grounds the model's output against real log evidence to
-prevent hallucinations.
+An offline security assistant built on **Microsoft Foundry Local**. It covers both halves
+of a SOC analyst's job:
 
-**Data never leaves the machine** — designed for security telemetry that cannot be sent
-to the cloud.
+- **"What happened?"** — raw Windows/Sysmon/Linux logs are normalized, flagged by
+  rule-based detectors, correlated into attack chains, and explained by a local LLM with
+  a **MITRE ATT&CK** mapping.
+- **"What do I do about it?"** — questions are answered from the team's own runbooks by
+  **retrieval-augmented generation**: passages are retrieved from a local vector index and
+  the model answers from those alone, citing the document — or says it does not know.
 
-**Offline scope (precise):** Inference, embeddings, detection and storage are fully local — no network calls at analysis time. *Bootstrap is not offline:* the first model download and `eval/real_eval.py`'s sample fetch require internet. On an air-gapped host, pre-stage the model cache and the EVTX samples. Streamlit telemetry is disabled via `.streamlit/config.toml`.
+**Data never leaves the machine.** Inference, embeddings, detection and storage are all
+local, with no network calls at analysis time. *Bootstrap is not offline:* the first model
+download needs internet. On an air-gapped host, pre-stage the model cache.
 
-> Built as a one-month learning project around Microsoft Foundry Local. It runs on CPU,
-> with no cloud account and no GPU required.
+> A one-month learning project. Runs on CPU — no cloud account, no GPU.
 
-**Positioning:** The tool covers both halves of an analyst's job. *"What happened?"* is
-answered by deterministic, rule-based detection — the local LLM explains and correlates
-findings but never decides whether something is malicious. *"What do I do about it?"* is
-answered by **retrieval-augmented generation** over the team's own runbooks: passages are
-retrieved from a local vector index and the model answers from those alone, citing the
-document, or says the knowledge base does not cover the question.
+## What it looks like
 
-## Why this matters
+An incident report. Severity comes from the detection rules, not the model — the note
+under it records that the model suggested something lower. Correlation has linked this
+host to another through a shared pivot address. The remediation steps at the bottom are
+retrieved from the runbook, not invented. And the validator has flagged the report as
+*"Dikkat (Kanıtsız İddialar Var)"* — it does not simply pass the model's work through.
 
-Real security data (EDR/SIEM logs) usually cannot be sent to a third-party cloud for
-privacy and compliance reasons. Foundry Local runs the LLM **on-device**, so this
-assistant can reason over sensitive logs with zero network calls. This project sits at
-the intersection of **GenAI and security operations** — turning raw, noisy logs into a
-grounded, ATT&CK-mapped incident report.
+![Incident report](docs/screenshots/04-vaka-raporu-tam.png)
 
-## Architecture
+Answering a question from the runbooks. The answer cites its source, and the passages it
+came from are attached so a reader can check it. Here the safety layer is also visible
+doing its job: the model invented a filename, and that is called out rather than shown
+quietly beside the real sources.
 
-```
-Raw logs
-   │
-   ▼
-[ingest]    → normalize logs into a unified schema, store in SQLite
-   │
-   ▼
-[detect]    → rule-based detectors flag suspicious events as ATT&CK-tagged signals
-   │
-   ▼
-[correlate] → group signals by host + time window into incidents, then link
-              incidents that share a pivot address or account into one campaign
-   │
-   ▼
-[reason]    → build an evidence package + generate analysis with the local LLM
-   │
-   ▼
-[validate]  → tie the LLM's claims back to real evidence (hallucination shield)
-   │
-   ▼
-[ui/main]   → present the result as a readable incident report
-```
+![Knowledge base answer](docs/screenshots/05-bilgi-tabani-cevap.png)
 
-Alongside it, the retrieval path that answers questions from the runbooks:
+When nothing in the knowledge base clears the similarity floor, the model is never asked.
+Saying so is the correct answer — a confident guess about incident response gets acted on.
 
-```
-kb/*.md
-   │
-   ▼
-[rag/index]  → split into passages → embed each one → store vectors in SQLite
-   │
-   ▼
-[rag/search] → embed the question → cosine similarity → top-K passages
-   │            (below the similarity floor: return nothing)
-   ▼
-[rag/answer] → answer from those passages only, with citations — or say
-               "the knowledge base does not cover this"
-```
+![Refusing an uncovered question](docs/screenshots/06-bilmiyorum.png)
 
-## File guide
+Generating a report takes most of a minute on CPU, and for the first half of it the model
+is reading the evidence and producing nothing. The interface says so, then shows the
+answer as it is written, so the wait is visibly progress rather than a hang.
 
-| File | Purpose |
-|------|---------|
-| `config.py` | Central configuration: model, thresholds, paths |
-| `common/db.py` | SQLite connection (single source) |
-| `common/attack.py` | Local MITRE ATT&CK knowledge base (context + validation source) |
-| `common/llm.py` | Foundry Local chat + embedding wrapper |
-| `common/console.py` | Forces terminal output to UTF-8 |
-| `common/logger.py` | Centralized telemetry and error logging |
-| `ingest/ingest.py` | Raw log → unified event → SQLite |
-| `ingest/win_evtx.py` | Parses real Windows EVTX logs into the schema |
-| `detect/registry.py` | Pluggable detector registry (`@register_detector`) |
-| `detect/detectors.py` | Rule-based detectors across Windows, Linux and web sources (brute force, PowerShell, C2, scheduled task, reverse shell, credential dumping, exfiltration, SQLi/exploit, ...) |
-| `detect/correlate.py` | Groups signals into per-host incidents, then links incidents across hosts into campaigns |
-| `common/timeutil.py` | Normalizes every log timestamp to timezone-aware UTC |
-| `kb/` | The knowledge base: runbooks, escalation policy, ATT&CK reference |
-| `rag/index.py` | Chunks documents, embeds passages, stores them in SQLite |
-| `rag/search.py` | Embeds a question and retrieves the closest passages (cosine, top-K) |
-| `rag/answer.py` | Answers from retrieved passages with citations, or refuses |
-| `reason/context.py` | Builds the evidence package for the LLM |
-| `reason/analyst.py` | Produces a structured analysis with the local LLM |
-| `validate/grounding.py` | Hallucination shield: validates claims against evidence |
-| `ui/report.py` | Prints the result as a readable report |
-| `ui/app.py` | Streamlit web interface (clickable demo) |
-| `main.py` | Orchestrator that runs the full pipeline |
-| `eval/golden.json` | Hand-labeled test scenarios (ground truth) |
-| `eval/evaluate.py` | Measures detection accuracy with precision/recall/F1 |
-| `eval/grounding_eval.py` | Measures the LLM's hallucination/grounding quality |
-| `eval/real_eval.py` | Measures recall on real labeled EVTX samples |
+![The model reading the evidence](docs/screenshots/02-model-kaniti-okuyor.png)
 
 ## Setup
 
@@ -112,215 +54,105 @@ python -m venv venv
 pip install -r requirements.txt          # to run it
 pip install -r requirements-dev.txt      # to run the tests as well
 winget install Microsoft.FoundryLocal    # local model runtime
+python -m rag.index                      # build the knowledge base index (once)
 ```
 
-`requirements.txt` declares only the three packages the project imports directly; pip
+`requirements.txt` declares only the four packages the project imports directly; pip
 resolves the rest. Pins are exact, because an unreviewed dependency upgrade is still an
 unreviewed change.
 
 ## Usage
 
 ```powershell
-python main.py                       # default fast model (qwen2.5-1.5b)
-python main.py --model phi-4-mini    # higher quality (large first-time download)
-python main.py --file mylogs.json    # analyze an arbitrary JSON log file
-python main.py --evtx "data/real/kerberos_pwd_spray_4771.evtx"   # analyze real EVTX
+streamlit run ui/app.py                  # web interface (analysis + Q&A)
+
+python main.py                           # analyse the sample logs in the terminal
+python main.py --file mylogs.json        # analyse your own JSON logs
+python main.py --evtx capture.evtx       # analyse a real Windows EVTX file
+
+python -m rag.answer "What if the Security log was cleared?"
+python -m rag.search "password spray"    # retrieval only, no generation
+python -m ui.navigator                   # export ATT&CK Navigator layers
 ```
 
-### Multi-source input
+Drop your own documents into `kb/` and re-run `python -m rag.index` to change what the
+assistant can answer from.
 
-The ingest layer resolves field names from a list of aliases (e.g. `timestamp`/`time`,
-`client_ip`/`ip`, `event_type`/`event_id`), so it accepts logs from different sources.
-Detectors cover **Windows host** telemetry (Security/Sysmon events), **Linux/Unix**
-behavior (reverse shells, `/etc/shadow` access, netcat exfiltration), and **web/WAF**
-attacks (scanning, SQL injection, exploitation) — each mapped to the right ATT&CK technique.
+## How it works
 
-## Evaluation
+Detection is deterministic and rule-based; the LLM explains and correlates but never
+decides whether something is malicious. Retrieval splits each document into passages of a
+few paragraphs, kept inside a heading so a passage answers one thing, embeds them with the
+local model, and stores the vectors in SQLite. A question is embedded by the *same* model
+and matched by cosine similarity.
 
-```powershell
-python -m pytest tests/ -q           # regression tests (fast, no LLM)
-python -m eval.evaluate              # detection metrics (fast, no LLM)
-python -m eval.grounding_eval --limit 3   # LLM grounding metrics
-python -m eval.real_eval             # recall on real EVTX samples
-```
-
-The detection evaluation is deterministic (needs no LLM), so it's fast and repeatable —
-which is what lets it act as a regression gate rather than a report:
-
-```powershell
-python -m eval.evaluate --min-precision 0.95 --min-recall 0.90   # exits 1 on regression
-```
-
-CI runs the tests and this gate on every push across Python 3.11–3.13. It installs only
-`pytest`: the ingest, detection, correlation and validation layers are pure standard
-library, so pulling in the on-device model runtime would cost minutes without covering
-an extra line. Anything that needs a model is measured locally with
-`eval/grounding_eval.py`.
-
-The suite covers every registered detector (one firing case each), a benign corpus that
-must produce **zero** alerts, cross-host campaign linking including four over-linking
-guards, prompt-injection containment, and timestamp/schema robustness. A meta-test fails
-the build if a detector is added without a case, so coverage cannot quietly rot.
+Full diagrams, the file guide and the detector list: **[docs/architecture.md](docs/architecture.md)**.
 
 ## Results
 
 | Evaluation | Result |
 |---|---|
-| Synthetic data | Precision **100%**, Recall **92.9%**, F1 **96.3%** |
-| Real data (EVTX-ATTACK-SAMPLES) | Recall **75%** (3/4 techniques) |
-| Regression tests | 15/15 passing |
+| Synthetic scenarios | Precision **100%**, Recall **92.9%** |
+| Real data (EVTX-ATTACK-SAMPLES) | Recall **75%** (n=4) |
+| Regression tests | **62/62** on Python 3.11–3.13 |
 
-**Read the synthetic numbers with suspicion.** Those scenarios were written alongside
-the detection rules, so 100% precision measures internal consistency, not real-world
-performance — a rule and its test sharing an author share their blind spots too. The
-honest external number is the real-data recall (75%), measured on a deliberately small
-sample (n=4) of labelled EVTX captures. Real telemetry uses different event schemas
-(scheduled task = Security 4698, password spray = Kerberos 4771), and simple rules
-cannot catch every technique; the misses are documented as known gaps rather than
-tuned away.
+Read the synthetic numbers with suspicion: those scenarios were written alongside the
+rules they test, so they measure internal consistency. The honest external number is the
+real-data recall. Methodology, what the tests cover, and what the validator catches the
+model doing: **[docs/evaluation.md](docs/evaluation.md)**.
 
-**The LLM is not trusted, and it earns that distrust.** Running the local model over
-the sample incidents, the validation layer routinely catches it filing a real
-technique under an invented tactic (`UNIX_SHells`, `command_and_script_interpreter`),
-leaving detected techniques unexplained, and rating an incident lower than the
-detectors did. None of that reaches the analyst unchallenged — which is the point of
-having a validation layer rather than a claim of zero hallucinations.
+## Design decisions
 
-## Performance
+- **The model never sets severity.** Detection is deterministic; the model's rating is
+  shown beside the detector's, never in place of it. Log text crafted by an attacker must
+  not be able to talk a real incident down to "low".
+- **Model output is validated, not trusted.** Invented techniques, wrong tactics,
+  unexplained detections, ungrounded IPs, invented citations and severity downgrades are
+  all flagged before an analyst sees them.
+- **Log content is data, never instruction.** Evidence is escaped, clipped and delimited,
+  and an attempt to manipulate the analyst is itself raised as a detection.
+- **Retrieval refuses.** A similarity floor means "nearest" is not treated as "relevant".
+- **Separate databases.** Runbooks are shared reference material; uploaded logs are
+  per-session, because ingest rebuilds its table and one analyst's upload must not reach
+  another's report.
+- **No index on the events table** — measured, and it made things slower. See
+  **[docs/performance.md](docs/performance.md)**.
 
-```powershell
-python -m eval.benchmark            # per-stage timings at several volumes
-```
+## Limitations
 
-Deterministic stages only, on a 16 GB CPU-only laptop. The LLM stage is excluded
-because it is bounded by the model runtime, not by this code (see *Known gaps*).
+- **No authentication.** The interface binds to loopback only; that is the only control.
+- **Detection is keyword-based and evadable.** WMI event-subscription persistence (T1546)
+  and valid-account abuse (T1078) have no rule yet — published as gaps in the ATT&CK
+  Navigator coverage layer rather than hidden.
+- **Small models are unreliable narrators.** `qwen2.5-1.5b` is the working default;
+  `qwen2.5-0.5b` ignores the output schema. Answers tend to come back in English even
+  when the question is not, since the knowledge base is English. Content is correct and
+  sourced; wording is not localised.
+- **The runtime cancels long generations on CPU**, so answers are capped and kept brief.
+  A faster machine allows richer reports.
+- No encryption at rest, and no audit trail of who analysed what.
 
-| Events | Ingest | Detect | Correlate | Total |
-|---|---|---|---|---|
-| 1,000 | 0.07s | 0.02s | <0.01s | **0.09s** |
-| 10,000 | 0.44s | 0.27s | <0.01s | **0.71s** |
-| 50,000 | 2.01s | 1.25s | <0.01s | **3.26s** |
+Threat model and trust boundaries: **[SECURITY.md](SECURITY.md)**.
 
-Two results worth recording, both of which contradicted an assumption:
+## References
 
-- **Brute-force detection was quadratic.** The naive "for every start, rescan what
-  follows" only terminates early when the threshold is met — so the worst case is an
-  ordinary one: an account failing auth all day without ever tripping it. Measured at
-  4,000 attempts: **10.8s, and doubling the input quadrupled the time.** A two-pointer
-  sliding window with lazily parsed timestamps brings that to **0.03s**.
-- **Adding indexes made it slower.** Indexing `event_id` and `(host, time)` was tried
-  and reverted: 50k events went from 3.26s to 3.35s while ingest paid to build them.
-  Detectors filter on common values (`event_id = 1` matches ~40% of rows), and a scan
-  beats an index lookup per row once a query matches much of the table. The reasoning
-  is recorded in `ingest/ingest.py` so it does not get "fixed" back.
+Built following Microsoft's official guidance:
 
-## Real data (EVTX)
-
-Beyond synthetic JSON, the system also analyzes **real Windows EVTX** logs from
-[sbousseaden/EVTX-ATTACK-SAMPLES](https://github.com/sbousseaden/EVTX-ATTACK-SAMPLES)
-(real attack logs labeled by ATT&CK). `eval/real_eval.py` downloads the required samples
-automatically on first run.
-
-## Experiments (not part of the pipeline)
-
-```powershell
-python -m experiments.attack_semantic_search
-```
-
-An approach that was evaluated and deliberately not adopted: embedding ATT&CK
-descriptions locally and ranking them against a free-text query by cosine similarity.
-Dense retrieval adds little over a 15-technique catalog, so the analysis pipeline does
-not use it — the file is kept only to document the experiment.
-
-## Enterprise-Grade Features
-
-This project was recently refactored to include production-ready architecture:
-- **Asynchronous Execution (`asyncio`):** Incident processing now runs concurrently. If there are multiple security incidents, LLM analysis tasks are dispatched in parallel, preventing I/O bottlenecks.
-- **Pluggable Detectors:** A new `DetectorRegistry` allows adding new detection rules simply by using the `@register_detector` decorator. Core execution logic never needs to be modified when adding new rules.
-- **Centralized Telemetry:** All system outputs and errors are now routed through Python's standard `logging` module and saved to `data/soc_assistant.log` (complete with stack traces) for enterprise auditability.
+- [What is Foundry Local?](https://learn.microsoft.com/azure/ai-foundry/foundry-local/what-is-foundry-local)
+- [Get started with Foundry Local](https://learn.microsoft.com/azure/ai-foundry/foundry-local/get-started)
+- [Tutorial: Build a RAG application with Foundry Local](https://learn.microsoft.com/azure/ai-foundry/foundry-local/tutorials/chat-application-with-open-web-ui) —
+  the source of the embedding + cosine-similarity retrieval pattern this project extends
+- [Prompt engineering techniques](https://learn.microsoft.com/azure/ai-services/openai/concepts/prompt-engineering)
+- [Building Your First Local RAG Application with Foundry Local](https://techcommunity.microsoft.com/blog/azuredevcommunityblog/building-your-first-local-rag-application-with-foundry-local/4501968) (community blog)
+- [MITRE ATT&CK](https://attack.mitre.org/) · [ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/)
+- [sbousseaden/EVTX-ATTACK-SAMPLES](https://github.com/sbousseaden/EVTX-ATTACK-SAMPLES) — real labelled attack logs
 
 ## Tech stack
 
-Python (`asyncio`) · Microsoft Foundry Local · on-device LLM & embeddings · SQLite · MITRE ATT&CK ·
-rule-based detection · evidence-package construction · grounding/validation ·
-Streamlit · EVTX parsing
+Python · Microsoft Foundry Local (on-device LLM + embeddings) · RAG (chunking, vector
+search, grounded generation) · SQLite · MITRE ATT&CK · rule-based detection · Streamlit ·
+EVTX parsing
 
-## Knowledge base Q&A (RAG)
+## License
 
-Log analysis says what happened. This says what to do about it, from the runbooks in
-`kb/` rather than from the model's memory.
-
-```powershell
-python -m rag.index                                    # chunk, embed, store in SQLite
-python -m rag.answer "What if the Security log was cleared?"
-python -m rag.search "password spray"                  # retrieval only, no generation
-```
-
-**How it works.** Each document is split into passages of a few paragraphs, kept within
-a heading so a passage answers one thing; consecutive passages overlap by a paragraph so
-an idea that straddles a boundary stays findable. Every passage is embedded by the local
-embedding model and stored with its vector in `data/kb.db` — separate from the events
-database, because runbooks are shared reference material while uploaded logs are
-per-session. A question is embedded by the *same* model and compared by cosine
-similarity; the closest passages become the prompt.
-
-**Two behaviours matter more than fluency.** Similarity has a floor: nearest is not the
-same as relevant, so when nothing clears it the model is never asked and the assistant
-answers *"The knowledge base does not cover this."* And every answer carries the
-passages behind it, so a reader can check it rather than trust it.
-
-```
-Q: Who decides incident severity?
-   [0.80] escalation-policy.md — Who decides severity
-Q: What is the best pizza topping?
-   → nothing above the floor: "The knowledge base does not cover this."
-```
-
-**Where it connects to detection.** An incident report's recommended actions are the
-model's suggestion, and generic advice at best. Alongside them the interface shows the
-runbook passages retrieved for the *detected* techniques — driven by the deterministic
-layer, not by the model's wording — so the procedure an analyst follows is the
-documented one, with the document named.
-
-Replace the contents of `kb/` with your own documents and re-run `python -m rag.index`.
-
-## ATT&CK Navigator layers
-
-```powershell
-python -m ui.navigator     # writes both layers; the web interface offers them as downloads
-```
-
-Open either file at [ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/)
-via *Open Existing Layer → Upload from local*.
-
-- **Detections** — the techniques an analysis actually triggered, scored by how many
-  signals support each one.
-- **Coverage** — which techniques the rule set can catch, and which it cannot: 13 of 15
-  catalogued techniques have a rule, and the two that do not (T1078 Valid Accounts,
-  T1546 Event Triggered Execution) are marked as gaps.
-
-The second layer is the more useful one. Publishing the blank squares next to the filled
-ones is how a detection capability is honestly described; a coverage map showing only
-strengths is marketing. A test asserts the published coverage equals what the detectors
-are actually tested to report, so the picture cannot drift from the rules.
-
-## Security
-
-The logs this tool analyses are written by whoever ran the command — during an incident,
-the attacker. [SECURITY.md](SECURITY.md) documents the trust boundaries that follow from
-that, the layered defence against prompt injection, why the model is never allowed to set
-severity, how sessions are isolated, and the limitations that are accepted rather than
-hidden (no authentication, no encryption at rest, evadable keyword rules).
-
-## Known gaps / future work
-
-- No detector yet for WMI event-subscription persistence (T1546) or in-memory PowerShell
-  whose payload isn't in the process command line — surfaced honestly by the evaluation.
-- Small local models follow the output schema unreliably. The validation layer catches
-  the errors, but report quality depends on the model: `qwen2.5-0.5b` is fast and
-  unusable here (ignores the schema), `qwen2.5-1.5b` is the working default.
-- The runtime cancels requests that take too long on CPU, so generation is capped and
-  the prompt asks for brevity. A faster machine would allow richer reports.
-- A larger labelled evaluation set, more real-world detectors, and analyst feedback
-  (marking false positives) are the natural next steps.
-
+MIT — see [LICENSE](LICENSE).
