@@ -437,6 +437,14 @@ else:
         else:
             if result["answered"]:
                 st.markdown(f"**Cevap:** {result['answer']}")
+                # A fabricated filename looks verifiable and is not, so it is named
+                # rather than quietly displayed alongside the real sources.
+                if result.get("invented_citations"):
+                    st.warning(
+                        "⚠️ Model var olmayan bir kaynak gösterdi: "
+                        + ", ".join(f"`{c}`" for c in result["invented_citations"])
+                        + ". Aşağıdaki gerçek pasajlar geçerlidir."
+                    )
             else:
                 st.warning(result["answer"])
 

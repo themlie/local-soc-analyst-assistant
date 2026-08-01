@@ -16,6 +16,7 @@ Two behaviours matter more than fluency:
     python -m rag.answer "How do I respond to a password spray?"
 """
 
+import re
 import time
 
 import common.console  # noqa: F401
@@ -27,8 +28,12 @@ team's own runbooks and policy.
 RULES:
 - Answer ONLY from the passages provided below. They are the team's documented
   procedure and they override anything you believe from general knowledge.
-- If the passages do not contain the answer, say exactly: "The knowledge base does not
-  cover this." Do not fill the gap from memory.
+- LANGUAGE: answer in the same language the question was asked in. The passages are
+  written in English; a question in another language is still answered from them.
+  A difference in language is NEVER a reason to refuse — translate as needed.
+- Refuse ONLY when the passages genuinely lack the information. In that case say
+  exactly: "The knowledge base does not cover this." Never fill a gap from memory.
+  If the passages contain even a partial answer, give it and say what is missing.
 - Put the source file name in brackets right after the claim it supports, like this:
   Disable the account only if it is privileged [runbook-brute-force.md].
   Write plain sentences; never wrap the whole answer in brackets.
@@ -41,6 +46,22 @@ RULES:
 # cancelled request is a worse answer than a slightly shorter one.
 _MAX_PASSAGE_CHARS = 600
 _RETRIES = 1
+
+
+_CITATION = re.compile(r"\[([^\[\]]{3,120}?\.md)\]")
+
+
+def invented_citations(answer: str, passages: list[dict]) -> list[str]:
+    """Cited document names that were not among the retrieved passages.
+
+    The model has been observed inventing a plausible-looking filename — one answer
+    cited `disable-the-account-only-if-it-is-privileged.md`, which does not exist. A
+    fabricated citation is worse than none: it looks verifiable and is not. The
+    incident path already validates the model's claims against evidence; this is the
+    same idea applied to the answer path.
+    """
+    allowed = {p["source"].lower() for p in passages}
+    return sorted({c for c in _CITATION.findall(answer) if c.lower() not in allowed})
 
 
 def _format_passages(passages: list[dict]) -> str:
@@ -68,9 +89,14 @@ def answer_question(question: str, alias: str | None = None, on_chunk=None) -> d
             "answered": False,
         }
 
+    # The language reminder sits last, immediately before the answer: a small model
+    # follows the most recent instruction far more reliably than the first one, and
+    # without it a Turkish question gets an English answer from English passages.
     user_prompt = (
         f"PASSAGES FROM THE KNOWLEDGE BASE:\n\n{_format_passages(passages)}\n\n"
-        f"QUESTION: {question}"
+        f"QUESTION: {question}\n\n"
+        f"Answer the question above using only the passages, in the SAME LANGUAGE as "
+        f"the question. Cite the source file in brackets."
     )
     # Imported here so the refusal path above needs no model runtime at all.
     from common.llm import complete, complete_streamed
@@ -81,7 +107,9 @@ def answer_question(question: str, alias: str | None = None, on_chunk=None) -> d
         try:
             text = (complete_streamed(SYSTEM_PROMPT, user_prompt, on_chunk=on_chunk, **kwargs)
                     if on_chunk else complete(SYSTEM_PROMPT, user_prompt, **kwargs))
-            return {"answer": text.strip(), "passages": passages, "answered": True}
+            answer = text.strip()
+            return {"answer": answer, "passages": passages, "answered": True,
+                    "invented_citations": invented_citations(answer, passages)}
         except Exception as exc:
             last_exc = exc
             if attempt < _RETRIES:

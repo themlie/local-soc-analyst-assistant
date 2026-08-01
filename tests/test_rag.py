@@ -11,7 +11,7 @@ import pytest
 
 from config import CHUNK_MAX_CHARS, KB_DIR
 from rag.index import chunk_document, load_documents
-from rag.answer import answer_question, _format_passages
+from rag.answer import answer_question, _format_passages, invented_citations
 
 SAMPLE = """# Runbook: Example
 
@@ -81,6 +81,23 @@ def test_passages_are_clipped_before_reaching_the_prompt():
     ])
     assert len(formatted) < 1000
     assert "…" in formatted
+
+
+def test_invented_citations_are_detected():
+    """Observed in practice: the model cited a plausible filename that does not exist.
+    A fabricated citation looks verifiable, so it must be named, not displayed."""
+    passages = [{"source": "runbook-brute-force.md", "heading": "Containment",
+                 "content": "…", "similarity": 0.7}]
+    answer = ("Reset the password [runbook-brute-force.md]. "
+              "Source: [disable-the-account-only-if-it-is-privileged.md].")
+    assert invented_citations(answer, passages) == [
+        "disable-the-account-only-if-it-is-privileged.md"]
+
+
+def test_real_citations_are_not_flagged():
+    passages = [{"source": "escalation-policy.md", "heading": "Severity levels",
+                 "content": "…", "similarity": 0.7}]
+    assert invented_citations("Escalate within an hour [escalation-policy.md].", passages) == []
 
 
 @pytest.mark.parametrize("field", ["source", "heading", "content"])
