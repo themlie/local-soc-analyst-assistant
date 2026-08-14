@@ -1,6 +1,6 @@
 # Local SOC Analyst Assistant (Air-Gapped)
 
-[![CI](https://github.com/themlie/local-soc-analyst-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/themlie/local-soc-analyst-assistant/actions/workflows/ci.yml)
+Demo Link: https://drive.google.com/file/d/1xJ1ORiNlgdCoWODz_h5ySQr3ZMeLRXn0/view?usp=sharing
 
 An offline security assistant built on **Microsoft Foundry Local**. It covers both halves
 of a SOC analyst's job:
